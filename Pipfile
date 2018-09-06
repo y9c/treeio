@@ -1,0 +1,21 @@
+[[source]]
+url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+biopython = "*"
+matplotlib = "*"
+click = "*"
+black = "*"
+
+[dev-packages]
+neovim = "*"
+pylint = "*"
+twine = "*"
+setuptools = "*"
+python-language-server = "*"
+black = "*"
+
+[requires]
+python_version = "3.7"
