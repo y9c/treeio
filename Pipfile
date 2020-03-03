@@ -10,12 +10,8 @@ click = "*"
 black = "*"
 
 [dev-packages]
-neovim = "*"
-pylint = "*"
 twine = "*"
 setuptools = "*"
-python-language-server = "*"
-black = "*"
 
 [requires]
-python_version = "3.7"
+python_version = "3.8"

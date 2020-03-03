@@ -1,0 +1,6 @@
+{
+    "python.linting.pylintPath": "/usr/bin/pylint",
+    "python.linting.mypyPath": "/usr/bin/mypy",
+    "python.linting.pydocstylePath": "/usr/bin/pydocstyle",
+    "python.sortImports.path": "/usr/bin/isort"
+}
