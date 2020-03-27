@@ -9,3 +9,16 @@
 """
 Read and write newick format.
 """
+
+from .tree import Tree
+
+
+def read_newick(nwk_string: str) -> Tree:
+    """Read newick file into Tree object."""
+    return Tree()
+
+
+def write_newick(tree: Tree) -> str:
+    """Write Tree object into string in newick format."""
+    nwk_string = ""
+    return nwk_string
