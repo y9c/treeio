@@ -4,7 +4,7 @@ build-backend = "poetry.masonry.api"
 
 [tool.poetry]
 name = "treeio"
-version = "0.0.0.dev0"
+version = "0.0.0.dev1"
 description = "A pure python parser for tree data format IO"
 authors = ["Ye Chang <yech1990@gmail.com>"]
 license = "MIT"
@@ -15,3 +15,6 @@ Click = "^7.0.0"
 
 [tool.poetry.dev-dependencies]
 twine = "^3.0.0"
+
+[tool.poetry.scripts]
+treeio = "treeio.cli:cli"

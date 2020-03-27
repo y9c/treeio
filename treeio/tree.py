@@ -52,9 +52,7 @@ class Tree:
 
     @children.setter
     def children(self, value: Iterable[Tree]) -> None:
-        if hasattr(value, "__iter__") and all(
-            isinstance(n, type(self)) for n in value
-        ):
+        if hasattr(value, "__iter__") and all(isinstance(n, type(self)) for n in value):
             self._children = list(value)
             for node in value:
                 # should not use `.parent`, or will set twice
