@@ -2,9 +2,9 @@
 
 """Top-level package for treeio."""
 
-__author__ = """Ye Chang"""
+__author__ = "Ye Chang"
 __email__ = "yech1990@gmail.com"
-__version__ = "0.0.0.dev4"
+__version__ = "0.0.0.dev5"
 
 
 from .tree import Tree
