@@ -1,0 +1,12 @@
+Metadata-Version: 2.1
+Name: treeio
+Version: 0.0.0.dev0
+Summary: A pure python parser for tree data format IO
+License: MIT
+Author: Ye Chang
+Author-email: yech1990@gmail.com
+Requires-Python: >=3.8,<4.0
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.8
+Requires-Dist: Click (>=7.0.0,<8.0.0)
