@@ -17,13 +17,16 @@ jobs:
         with:
           python-version: 3.8
 
-      - name: Install pdoc3
+      - name: Install poetry
         run: >-
-          python3 -m pip install pdoc3
+          curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/get-poetry.py | python &&
+          source $HOME/.poetry/env
+
+      - name: Install dependencies
+        run: $HOME/.poetry/bin/poetry install
 
       - name: Build pdoc from source code in master branch
-        run: >-
-          pdoc --config latex_math=True --html --force -o ./pdoc treeio
+        run: $HOME/.poetry/bin/poetry run pdoc3 --config latex_math=True --html --force -o ./pdoc treeio
 
       - name: Deploy to gh-pages
         uses: peaceiris/actions-gh-pages@v3

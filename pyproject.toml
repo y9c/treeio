@@ -13,10 +13,11 @@ repository = "https://github.com/yech1990/treeio"
 
 [tool.poetry.dependencies]
 python = "^3.8"
-Click = "^7.0.0"
+click = "^7.0.0"
 
 [tool.poetry.dev-dependencies]
 twine = "^3.0.0"
+pdoc3 = "^0.7.5"
 
 [tool.poetry.scripts]
 treeio = "treeio.cli:cli"
