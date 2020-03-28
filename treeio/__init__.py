@@ -1,6 +1,10 @@
 # -*- coding: utf-8 -*-
 
-"""Top-level package for treeio."""
+"""
+Top-level package for treeio.
+
+.. include:: ../README.md
+"""
 
 __author__ = "Ye Chang"
 __email__ = "yech1990@gmail.com"

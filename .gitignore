@@ -103,3 +103,5 @@ ENV/
 
 # scripts
 upload.sh
+# pdoc3
+pdoc/

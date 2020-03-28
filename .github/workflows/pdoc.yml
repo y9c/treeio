@@ -1,0 +1,32 @@
+name: Publish pdoc 📙 on github pages 🌐
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-18.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@master
+
+      - name: Set up Python 3.8
+        uses: actions/setup-python@v1
+        with:
+          python-version: 3.8
+
+      - name: Install pdoc3
+        run: >-
+          python3 -m pip install pdoc3
+
+      - name: Build pdoc from source code in master branch
+        run: >-
+          pdoc --config latex_math=True --html --force -o ./pdoc treeio
+
+      - name: Deploy to gh-pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./pdoc/treeio

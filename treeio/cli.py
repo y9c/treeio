@@ -1,6 +1,12 @@
 # -*- coding: utf-8 -*-
 
-"""Console script for treeio."""
+r"""
+Console script for treeio.
+
+test latex math
+
+$$\pi \times x = \frac{x}{y+z}$$
+"""
 
 import click
 from .treeio import convert_format
