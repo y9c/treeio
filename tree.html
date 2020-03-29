@@ -40,20 +40,40 @@ from __future__ import annotations
 from typing import Optional, Iterable, List
 
 
+
 class Tree:
     &#34;&#34;&#34;
     Tree class is used to store a tree object.
+
+                ┌── raccoon
+        ┌─ none |
+        │       └── bear
+    Root ┤
+        |        ───── Xi ─ Omicron
+        ├ none ─|
+        │      ┌─── Iota
+        |
+        └ dog  ┼── Kappa
+                └─ Lambda
     &#34;&#34;&#34;
 
-    def __init__(self, name=&#34;tree&#34;):
+    def __init__(self, name=&#34;unknown&#34;, dist=None, supp=None):
         &#34;&#34;&#34;Init.&#34;&#34;&#34;
-        self.name = name
+        self.name: str = name
+        self.dist: Optional[float] = dist
+        self.supp: Optional[float] = supp
         self._parent: Optional[Tree] = None
         self._children: List[Tree] = []
 
     def __repr__(self):
         &#34;&#34;&#34;Print.&#34;&#34;&#34;
         return f&#34;&lt;Tree: {self.name}&gt;&#34;
+
+    def __str__(self):
+        &#34;&#34;&#34; Print tree in console by ascii art.&#34;&#34;&#34;
+        # return self.as_ascii()
+        from .show import tree2ascii
+        return tree2ascii(True)(True)(self)
 
     @property
     def parent(self) -&gt; Optional[Tree]:
@@ -94,9 +114,43 @@ class Tree:
     def children(self):
         del self._children
 
+    def append_child(self, tree: Tree):
+        self.children += [tree]
+        return self
 
-# Alias
-TreeNode = Tree</code></pre>
+    def extend_children(self, tree: List[Tree]):
+        self.children += tree
+        return self
+
+    def remove_child(self, tree):
+        assert self.parent is self, &#34;The input node is not a child node.&#34;
+        tree._parent = None
+        self._children = [c for c in self.children if c is not tree]
+        return self
+
+    def isolated(self):
+        &#34;&#34;&#34;Isolate tree, turn into root node.&#34;&#34;&#34;
+        if self.is_root():
+            return self
+        p = self._parent
+        p._children = [c for c in p.children if c is not self]
+        self._parent = None
+        return self
+
+    def is_leaf(self):
+        &#34;&#34;&#34;Chech node is a leaf(terminal node) or not.&#34;&#34;&#34;
+        return len(self.children) == 0
+
+    def is_root(self):
+        &#34;&#34;&#34;Chech node is a root(starting node) or not.&#34;&#34;&#34;
+        return self.parent is None
+
+if __name__ == &#34;__main__&#34;:
+    tree = Tree(&#34;A&#34;)
+    clade = Tree(&#34;B&#34;)
+    clade.children = [Tree(&#34;X&#34;), Tree(&#34;Y&#34;)]
+    tree.children = [clade, Tree(&#34;C&#34;), Tree(&#34;D&#34;)]
+    print(tree)</code></pre>
 </details>
 </section>
 <section>
@@ -110,10 +164,24 @@ TreeNode = Tree</code></pre>
 <dl>
 <dt id="treeio.tree.Tree"><code class="flex name class">
 <span>class <span class="ident">Tree</span></span>
-<span>(</span><span>name='tree')</span>
+<span>(</span><span>name='unknown', dist=None, supp=None)</span>
 </code></dt>
 <dd>
 <section class="desc"><p>Tree class is used to store a tree object.</p>
+<pre><code>        ┌── raccoon
+┌─ none |
+│       └── bear
+</code></pre>
+<p>Root ┤
+|
+───── Xi ─ Omicron
+├ none ─|
+│
+┌─── Iota
+|
+└ dog
+┼── Kappa
+└─ Lambda</p>
 <p>Init.</p></section>
 <details class="source">
 <summary>
@@ -122,17 +190,36 @@ TreeNode = Tree</code></pre>
 <pre><code class="python">class Tree:
     &#34;&#34;&#34;
     Tree class is used to store a tree object.
+
+                ┌── raccoon
+        ┌─ none |
+        │       └── bear
+    Root ┤
+        |        ───── Xi ─ Omicron
+        ├ none ─|
+        │      ┌─── Iota
+        |
+        └ dog  ┼── Kappa
+                └─ Lambda
     &#34;&#34;&#34;
 
-    def __init__(self, name=&#34;tree&#34;):
+    def __init__(self, name=&#34;unknown&#34;, dist=None, supp=None):
         &#34;&#34;&#34;Init.&#34;&#34;&#34;
-        self.name = name
+        self.name: str = name
+        self.dist: Optional[float] = dist
+        self.supp: Optional[float] = supp
         self._parent: Optional[Tree] = None
         self._children: List[Tree] = []
 
     def __repr__(self):
         &#34;&#34;&#34;Print.&#34;&#34;&#34;
         return f&#34;&lt;Tree: {self.name}&gt;&#34;
+
+    def __str__(self):
+        &#34;&#34;&#34; Print tree in console by ascii art.&#34;&#34;&#34;
+        # return self.as_ascii()
+        from .show import tree2ascii
+        return tree2ascii(True)(True)(self)
 
     @property
     def parent(self) -&gt; Optional[Tree]:
@@ -171,7 +258,38 @@ TreeNode = Tree</code></pre>
 
     @children.deleter
     def children(self):
-        del self._children</code></pre>
+        del self._children
+
+    def append_child(self, tree: Tree):
+        self.children += [tree]
+        return self
+
+    def extend_children(self, tree: List[Tree]):
+        self.children += tree
+        return self
+
+    def remove_child(self, tree):
+        assert self.parent is self, &#34;The input node is not a child node.&#34;
+        tree._parent = None
+        self._children = [c for c in self.children if c is not tree]
+        return self
+
+    def isolated(self):
+        &#34;&#34;&#34;Isolate tree, turn into root node.&#34;&#34;&#34;
+        if self.is_root():
+            return self
+        p = self._parent
+        p._children = [c for c in p.children if c is not self]
+        self._parent = None
+        return self
+
+    def is_leaf(self):
+        &#34;&#34;&#34;Chech node is a leaf(terminal node) or not.&#34;&#34;&#34;
+        return len(self.children) == 0
+
+    def is_root(self):
+        &#34;&#34;&#34;Chech node is a root(starting node) or not.&#34;&#34;&#34;
+        return self.parent is None</code></pre>
 </details>
 <h3>Instance variables</h3>
 <dl>
@@ -202,98 +320,97 @@ def parent(self) -&gt; Optional[Tree]:
 </details>
 </dd>
 </dl>
-</dd>
-<dt id="treeio.tree.Tree"><code class="flex name class">
-<span>class <span class="ident">TreeNode</span></span>
-<span>(</span><span>name='tree')</span>
+<h3>Methods</h3>
+<dl>
+<dt id="treeio.tree.Tree.append_child"><code class="name flex">
+<span>def <span class="ident">append_child</span></span>(<span>self, tree)</span>
 </code></dt>
 <dd>
-<section class="desc"><p>Tree class is used to store a tree object.</p>
-<p>Init.</p></section>
+<section class="desc"></section>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">class Tree:
-    &#34;&#34;&#34;
-    Tree class is used to store a tree object.
-    &#34;&#34;&#34;
-
-    def __init__(self, name=&#34;tree&#34;):
-        &#34;&#34;&#34;Init.&#34;&#34;&#34;
-        self.name = name
-        self._parent: Optional[Tree] = None
-        self._children: List[Tree] = []
-
-    def __repr__(self):
-        &#34;&#34;&#34;Print.&#34;&#34;&#34;
-        return f&#34;&lt;Tree: {self.name}&gt;&#34;
-
-    @property
-    def parent(self) -&gt; Optional[Tree]:
-        &#34;&#34;&#34;Get the parent of tree node.&#34;&#34;&#34;
-        return self._parent
-
-    @parent.setter
-    def parent(self, value: Tree) -&gt; None:
-        if isinstance(value, type(self)) or value is None:
-            self._parent = value
-            # should not use `.children`, or will set twice
-            value._children.append(self)
-        else:
-            raise ValueError(&#34;xxx&#34;)
-
-    @parent.deleter
-    def parent(self):
-        del self._parent
-
-    @property
-    def children(self) -&gt; List[Tree]:
-        &#34;&#34;&#34;Get the children of tree node.&#34;&#34;&#34;
-        return self._children
-
-    @children.setter
-    def children(self, value: Iterable[Tree]) -&gt; None:
-        if hasattr(value, &#34;__iter__&#34;) and all(
-            isinstance(n, type(self)) for n in value
-        ):
-            self._children = list(value)
-            for node in value:
-                # should not use `.parent`, or will set twice
-                node._parent = self
-        else:
-            raise ValueError(&#34;xxx&#34;)
-
-    @children.deleter
-    def children(self):
-        del self._children</code></pre>
-</details>
-<h3>Instance variables</h3>
-<dl>
-<dt id="treeio.tree.Tree.children"><code class="name">var <span class="ident">children</span></code></dt>
-<dd>
-<section class="desc"><p>Get the children of tree node.</p></section>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">@property
-def children(self) -&gt; List[Tree]:
-    &#34;&#34;&#34;Get the children of tree node.&#34;&#34;&#34;
-    return self._children</code></pre>
+<pre><code class="python">def append_child(self, tree: Tree):
+    self.children += [tree]
+    return self</code></pre>
 </details>
 </dd>
-<dt id="treeio.tree.Tree.parent"><code class="name">var <span class="ident">parent</span></code></dt>
+<dt id="treeio.tree.Tree.extend_children"><code class="name flex">
+<span>def <span class="ident">extend_children</span></span>(<span>self, tree)</span>
+</code></dt>
 <dd>
-<section class="desc"><p>Get the parent of tree node.</p></section>
+<section class="desc"></section>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">@property
-def parent(self) -&gt; Optional[Tree]:
-    &#34;&#34;&#34;Get the parent of tree node.&#34;&#34;&#34;
-    return self._parent</code></pre>
+<pre><code class="python">def extend_children(self, tree: List[Tree]):
+    self.children += tree
+    return self</code></pre>
+</details>
+</dd>
+<dt id="treeio.tree.Tree.is_leaf"><code class="name flex">
+<span>def <span class="ident">is_leaf</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<section class="desc"><p>Chech node is a leaf(terminal node) or not.</p></section>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def is_leaf(self):
+    &#34;&#34;&#34;Chech node is a leaf(terminal node) or not.&#34;&#34;&#34;
+    return len(self.children) == 0</code></pre>
+</details>
+</dd>
+<dt id="treeio.tree.Tree.is_root"><code class="name flex">
+<span>def <span class="ident">is_root</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<section class="desc"><p>Chech node is a root(starting node) or not.</p></section>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def is_root(self):
+    &#34;&#34;&#34;Chech node is a root(starting node) or not.&#34;&#34;&#34;
+    return self.parent is None</code></pre>
+</details>
+</dd>
+<dt id="treeio.tree.Tree.isolated"><code class="name flex">
+<span>def <span class="ident">isolated</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<section class="desc"><p>Isolate tree, turn into root node.</p></section>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def isolated(self):
+    &#34;&#34;&#34;Isolate tree, turn into root node.&#34;&#34;&#34;
+    if self.is_root():
+        return self
+    p = self._parent
+    p._children = [c for c in p.children if c is not self]
+    self._parent = None
+    return self</code></pre>
+</details>
+</dd>
+<dt id="treeio.tree.Tree.remove_child"><code class="name flex">
+<span>def <span class="ident">remove_child</span></span>(<span>self, tree)</span>
+</code></dt>
+<dd>
+<section class="desc"></section>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def remove_child(self, tree):
+    assert self.parent is self, &#34;The input node is not a child node.&#34;
+    tree._parent = None
+    self._children = [c for c in self.children if c is not tree]
+    return self</code></pre>
 </details>
 </dd>
 </dl>
@@ -316,16 +433,15 @@ def parent(self) -&gt; Optional[Tree]:
 <ul>
 <li>
 <h4><code><a title="treeio.tree.Tree" href="#treeio.tree.Tree">Tree</a></code></h4>
-<ul class="">
+<ul class="two-column">
+<li><code><a title="treeio.tree.Tree.append_child" href="#treeio.tree.Tree.append_child">append_child</a></code></li>
 <li><code><a title="treeio.tree.Tree.children" href="#treeio.tree.Tree.children">children</a></code></li>
+<li><code><a title="treeio.tree.Tree.extend_children" href="#treeio.tree.Tree.extend_children">extend_children</a></code></li>
+<li><code><a title="treeio.tree.Tree.is_leaf" href="#treeio.tree.Tree.is_leaf">is_leaf</a></code></li>
+<li><code><a title="treeio.tree.Tree.is_root" href="#treeio.tree.Tree.is_root">is_root</a></code></li>
+<li><code><a title="treeio.tree.Tree.isolated" href="#treeio.tree.Tree.isolated">isolated</a></code></li>
 <li><code><a title="treeio.tree.Tree.parent" href="#treeio.tree.Tree.parent">parent</a></code></li>
-</ul>
-</li>
-<li>
-<h4><code><a title="treeio.tree.Tree" href="#treeio.tree.Tree">Tree</a></code></h4>
-<ul class="">
-<li><code><a title="treeio.tree.Tree.children" href="#treeio.tree.Tree.children">children</a></code></li>
-<li><code><a title="treeio.tree.Tree.parent" href="#treeio.tree.Tree.parent">parent</a></code></li>
+<li><code><a title="treeio.tree.Tree.remove_child" href="#treeio.tree.Tree.remove_child">remove_child</a></code></li>
 </ul>
 </li>
 </ul>

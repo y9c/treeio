@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1" />
 <meta name="generator" content="pdoc 0.7.5" />
-<title>treeio.json API documentation</title>
+<title>treeio.jt API documentation</title>
 <meta name="description" content="Read and write json format." />
 <link href='https://cdnjs.cloudflare.com/ajax/libs/normalize/8.0.0/normalize.min.css' rel='stylesheet'>
 <link href='https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/8.0.0/sanitize.min.css' rel='stylesheet'>
@@ -18,7 +18,7 @@
 <main>
 <article id="content">
 <header>
-<h1 class="title">Module <code>treeio.json</code></h1>
+<h1 class="title">Module <code>treeio.jt</code></h1>
 </header>
 <section id="section-intro">
 <p>Read and write json format.</p>
@@ -36,7 +36,80 @@
 
 &#34;&#34;&#34;
 Read and write json format.
-&#34;&#34;&#34;</code></pre>
+&#34;&#34;&#34;
+
+import json
+from typing import List
+
+from .tree import Tree
+
+
+def read_json(json_string: str) -&gt; List[Tree]:
+    &#34;&#34;&#34;Return a json object in the format desribed below
+
+    ```json
+    {
+      &#34;name&#34;: &#34;root&#34;,
+      &#34;branch_lenguh&#34;: 0,
+      &#34;children&#34;: [
+        {
+          &#34;name&#34;: &#34;unknown&#34;,
+          &#34;branch_lenguh&#34;: 0.846,
+          &#34;children&#34;: [
+            { &#34;name&#34;: &#34;raccoon&#34;, &#34;branch_lenguh&#34;: 19.19959 },
+            { &#34;name&#34;: &#34;bear&#34;, &#34;branch_lenguh&#34;: 6.80041 }
+          ]
+        },
+        {
+          &#34;name&#34;: &#34;unknown&#34;,
+          &#34;branch_lenguh&#34;: 3.87382,
+          &#34;children&#34;: [
+
+          ...
+
+          ]
+        },
+        { &#34;name&#34;: &#34;dog&#34;, &#34;branch_lenguh&#34;: 25.46154 }
+      ]
+    }
+    ```
+    &#34;&#34;&#34;
+
+    name_key = &#34;name&#34;
+    child_key = &#34;children&#34;
+    dist_key = &#34;branch_lenguh&#34;
+    supp_key = &#34;support&#34;
+
+    data = json.loads(json_string)
+    # assert type(data) is dict, &#34;Only single tree is supported.&#34;
+
+    tree_scratch = Tree(&#34;scratch&#34;)
+
+    def _parse_node(obj, tree_cur):
+        &#34;&#34;&#34;Recursively search for values of key in JSON tree.&#34;&#34;&#34;
+        if isinstance(obj, dict):
+            node = Tree(
+                name=obj.get(name_key),
+                dist=obj.get(dist_key),
+                supp=obj.get(supp_key),
+            )
+            tree_cur.append_child(node)
+            if child_key in obj:
+                tree_cur = node
+                _parse_node(obj[child_key], tree_cur)
+        elif isinstance(obj, list):
+            for item in obj:
+                _parse_node(item, tree_cur)
+
+    _parse_node(data, tree_scratch)
+
+    return [t.isolated() for t in tree_scratch.children]
+
+
+if __name__ == &#34;__main__&#34;:
+    with open(&#34;../data/animals.json&#34;) as f:
+        TREE = read_json(f.read())
+        print(TREE[0])</code></pre>
 </details>
 </section>
 <section>
@@ -44,6 +117,105 @@ Read and write json format.
 <section>
 </section>
 <section>
+<h2 class="section-title" id="header-functions">Functions</h2>
+<dl>
+<dt id="treeio.jt.read_json"><code class="name flex">
+<span>def <span class="ident">read_json</span></span>(<span>json_string)</span>
+</code></dt>
+<dd>
+<section class="desc"><p>Return a json object in the format desribed below</p>
+<pre><code class="json">{
+  &quot;name&quot;: &quot;root&quot;,
+  &quot;branch_lenguh&quot;: 0,
+  &quot;children&quot;: [
+    {
+      &quot;name&quot;: &quot;unknown&quot;,
+      &quot;branch_lenguh&quot;: 0.846,
+      &quot;children&quot;: [
+        { &quot;name&quot;: &quot;raccoon&quot;, &quot;branch_lenguh&quot;: 19.19959 },
+        { &quot;name&quot;: &quot;bear&quot;, &quot;branch_lenguh&quot;: 6.80041 }
+      ]
+    },
+    {
+      &quot;name&quot;: &quot;unknown&quot;,
+      &quot;branch_lenguh&quot;: 3.87382,
+      &quot;children&quot;: [
+
+      ...
+
+      ]
+    },
+    { &quot;name&quot;: &quot;dog&quot;, &quot;branch_lenguh&quot;: 25.46154 }
+  ]
+}
+</code></pre></section>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def read_json(json_string: str) -&gt; List[Tree]:
+    &#34;&#34;&#34;Return a json object in the format desribed below
+
+    ```json
+    {
+      &#34;name&#34;: &#34;root&#34;,
+      &#34;branch_lenguh&#34;: 0,
+      &#34;children&#34;: [
+        {
+          &#34;name&#34;: &#34;unknown&#34;,
+          &#34;branch_lenguh&#34;: 0.846,
+          &#34;children&#34;: [
+            { &#34;name&#34;: &#34;raccoon&#34;, &#34;branch_lenguh&#34;: 19.19959 },
+            { &#34;name&#34;: &#34;bear&#34;, &#34;branch_lenguh&#34;: 6.80041 }
+          ]
+        },
+        {
+          &#34;name&#34;: &#34;unknown&#34;,
+          &#34;branch_lenguh&#34;: 3.87382,
+          &#34;children&#34;: [
+
+          ...
+
+          ]
+        },
+        { &#34;name&#34;: &#34;dog&#34;, &#34;branch_lenguh&#34;: 25.46154 }
+      ]
+    }
+    ```
+    &#34;&#34;&#34;
+
+    name_key = &#34;name&#34;
+    child_key = &#34;children&#34;
+    dist_key = &#34;branch_lenguh&#34;
+    supp_key = &#34;support&#34;
+
+    data = json.loads(json_string)
+    # assert type(data) is dict, &#34;Only single tree is supported.&#34;
+
+    tree_scratch = Tree(&#34;scratch&#34;)
+
+    def _parse_node(obj, tree_cur):
+        &#34;&#34;&#34;Recursively search for values of key in JSON tree.&#34;&#34;&#34;
+        if isinstance(obj, dict):
+            node = Tree(
+                name=obj.get(name_key),
+                dist=obj.get(dist_key),
+                supp=obj.get(supp_key),
+            )
+            tree_cur.append_child(node)
+            if child_key in obj:
+                tree_cur = node
+                _parse_node(obj[child_key], tree_cur)
+        elif isinstance(obj, list):
+            for item in obj:
+                _parse_node(item, tree_cur)
+
+    _parse_node(data, tree_scratch)
+
+    return [t.isolated() for t in tree_scratch.children]</code></pre>
+</details>
+</dd>
+</dl>
 </section>
 <section>
 </section>
@@ -57,6 +229,11 @@ Read and write json format.
 <li><h3>Super-module</h3>
 <ul>
 <li><code><a title="treeio" href="index.html">treeio</a></code></li>
+</ul>
+</li>
+<li><h3><a href="#header-functions">Functions</a></h3>
+<ul class="">
+<li><code><a title="treeio.jt.read_json" href="#treeio.jt.read_json">read_json</a></code></li>
 </ul>
 </li>
 </ul>
