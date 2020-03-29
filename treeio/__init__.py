@@ -12,3 +12,5 @@ __version__ = "0.0.0.dev5"
 
 
 from .tree import Tree
+
+__all__ = ["Tree"]

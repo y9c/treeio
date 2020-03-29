@@ -12,20 +12,40 @@ from __future__ import annotations
 from typing import Optional, Iterable, List
 
 
+
 class Tree:
     """
     Tree class is used to store a tree object.
+
+                ┌── raccoon
+        ┌─ none |
+        │       └── bear
+    Root ┤
+        |        ───── Xi ─ Omicron
+        ├ none ─|
+        │      ┌─── Iota
+        |
+        └ dog  ┼── Kappa
+                └─ Lambda
     """
 
-    def __init__(self, name="tree"):
+    def __init__(self, name="unknown", dist=None, supp=None):
         """Init."""
-        self.name = name
+        self.name: str = name
+        self.dist: Optional[float] = dist
+        self.supp: Optional[float] = supp
         self._parent: Optional[Tree] = None
         self._children: List[Tree] = []
 
     def __repr__(self):
         """Print."""
         return f"<Tree: {self.name}>"
+
+    def __str__(self):
+        """ Print tree in console by ascii art."""
+        # return self.as_ascii()
+        from .show import tree2ascii
+        return tree2ascii(True)(True)(self)
 
     @property
     def parent(self) -> Optional[Tree]:
@@ -66,6 +86,40 @@ class Tree:
     def children(self):
         del self._children
 
+    def append_child(self, tree: Tree):
+        self.children += [tree]
+        return self
 
-# Alias
-TreeNode = Tree
+    def extend_children(self, tree: List[Tree]):
+        self.children += tree
+        return self
+
+    def remove_child(self, tree):
+        assert self.parent is self, "The input node is not a child node."
+        tree._parent = None
+        self._children = [c for c in self.children if c is not tree]
+        return self
+
+    def isolated(self):
+        """Isolate tree, turn into root node."""
+        if self.is_root():
+            return self
+        p = self._parent
+        p._children = [c for c in p.children if c is not self]
+        self._parent = None
+        return self
+
+    def is_leaf(self):
+        """Chech node is a leaf(terminal node) or not."""
+        return len(self.children) == 0
+
+    def is_root(self):
+        """Chech node is a root(starting node) or not."""
+        return self.parent is None
+
+if __name__ == "__main__":
+    tree = Tree("A")
+    clade = Tree("B")
+    clade.children = [Tree("X"), Tree("Y")]
+    tree.children = [clade, Tree("C"), Tree("D")]
+    print(tree)
