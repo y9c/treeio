@@ -40,21 +40,18 @@ from __future__ import annotations
 from typing import Optional, Iterable, List
 from itertools import chain
 
+from .utils import dedup
+
 
 class Tree:
     &#34;&#34;&#34;
     Tree class is used to store a tree object.
 
-                 ┌── raccoon
-         ┌─ none |
-         │       └── bear
-    Root ┤
-         |        ───── Xi ─ Omicron
-         ├ none ─|
-         │      ┌─── Iota
-         |
-         └ dog  ┼── Kappa
-                └─ Lambda
+                  ┌ Theta
+          ┌─ Beta ┤
+    Alpha ┤       └ Delta
+          │
+          └ Gamma
     &#34;&#34;&#34;
 
     def __init__(self, name=&#34;unknown&#34;, dist=None, supp=None):
@@ -109,7 +106,7 @@ class Tree:
         if hasattr(value, &#34;__iter__&#34;) and all(
             isinstance(n, type(self)) for n in value
         ):
-            self._children = list(set(value))
+            self._children = dedup(value)
             for node in value:
                 # should not use `.parent`, or will set twice
                 node._parent = self
@@ -176,20 +173,13 @@ if __name__ == &#34;__main__&#34;:
 </code></dt>
 <dd>
 <section class="desc"><p>Tree class is used to store a tree object.</p>
-<pre><code>         ┌── raccoon
- ┌─ none |
- │       └── bear
+<pre><code>          ┌ Theta
+  ┌─ Beta ┤
 </code></pre>
-<p>Root ┤
-|
-───── Xi ─ Omicron
-├ none ─|
+<p>Alpha ┤
+└ Delta
 │
-┌─── Iota
-|
-└ dog
-┼── Kappa
-└─ Lambda</p>
+└ Gamma</p>
 <p>Init.</p></section>
 <details class="source">
 <summary>
@@ -199,16 +189,11 @@ if __name__ == &#34;__main__&#34;:
     &#34;&#34;&#34;
     Tree class is used to store a tree object.
 
-                 ┌── raccoon
-         ┌─ none |
-         │       └── bear
-    Root ┤
-         |        ───── Xi ─ Omicron
-         ├ none ─|
-         │      ┌─── Iota
-         |
-         └ dog  ┼── Kappa
-                └─ Lambda
+                  ┌ Theta
+          ┌─ Beta ┤
+    Alpha ┤       └ Delta
+          │
+          └ Gamma
     &#34;&#34;&#34;
 
     def __init__(self, name=&#34;unknown&#34;, dist=None, supp=None):
@@ -263,7 +248,7 @@ if __name__ == &#34;__main__&#34;:
         if hasattr(value, &#34;__iter__&#34;) and all(
             isinstance(n, type(self)) for n in value
         ):
-            self._children = list(set(value))
+            self._children = dedup(value)
             for node in value:
                 # should not use `.parent`, or will set twice
                 node._parent = self

@@ -87,6 +87,10 @@ __all__ = [&#34;Tree&#34;]</code></pre>
 <dd>
 <section class="desc"><p>Main module.</p></section>
 </dd>
+<dt><code class="name"><a title="treeio.utils" href="utils.html">treeio.utils</a></code></dt>
+<dd>
+<section class="desc"><p>Common functions.</p></section>
+</dd>
 </dl>
 </section>
 <section>
@@ -102,20 +106,13 @@ __all__ = [&#34;Tree&#34;]</code></pre>
 </code></dt>
 <dd>
 <section class="desc"><p>Tree class is used to store a tree object.</p>
-<pre><code>         ┌── raccoon
- ┌─ none |
- │       └── bear
+<pre><code>          ┌ Theta
+  ┌─ Beta ┤
 </code></pre>
-<p>Root ┤
-|
-───── Xi ─ Omicron
-├ none ─|
+<p>Alpha ┤
+└ Delta
 │
-┌─── Iota
-|
-└ dog
-┼── Kappa
-└─ Lambda</p>
+└ Gamma</p>
 <p>Init.</p></section>
 <details class="source">
 <summary>
@@ -125,16 +122,11 @@ __all__ = [&#34;Tree&#34;]</code></pre>
     &#34;&#34;&#34;
     Tree class is used to store a tree object.
 
-                 ┌── raccoon
-         ┌─ none |
-         │       └── bear
-    Root ┤
-         |        ───── Xi ─ Omicron
-         ├ none ─|
-         │      ┌─── Iota
-         |
-         └ dog  ┼── Kappa
-                └─ Lambda
+                  ┌ Theta
+          ┌─ Beta ┤
+    Alpha ┤       └ Delta
+          │
+          └ Gamma
     &#34;&#34;&#34;
 
     def __init__(self, name=&#34;unknown&#34;, dist=None, supp=None):
@@ -189,7 +181,7 @@ __all__ = [&#34;Tree&#34;]</code></pre>
         if hasattr(value, &#34;__iter__&#34;) and all(
             isinstance(n, type(self)) for n in value
         ):
-            self._children = list(set(value))
+            self._children = dedup(value)
             for node in value:
                 # should not use `.parent`, or will set twice
                 node._parent = self
@@ -381,6 +373,7 @@ def parent(self) -&gt; Optional[Tree]:
 <li><code><a title="treeio.show" href="show.html">treeio.show</a></code></li>
 <li><code><a title="treeio.tree" href="tree.html">treeio.tree</a></code></li>
 <li><code><a title="treeio.treeio" href="treeio.html">treeio.treeio</a></code></li>
+<li><code><a title="treeio.utils" href="utils.html">treeio.utils</a></code></li>
 </ul>
 </li>
 <li><h3><a href="#header-classes">Classes</a></h3>
