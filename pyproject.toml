@@ -18,6 +18,7 @@ click = "^7.0.0"
 [tool.poetry.dev-dependencies]
 twine = "^3.0.0"
 pdoc3 = "^0.7.5"
+pytest = ""
 
 [tool.poetry.scripts]
 treeio = "treeio.cli:cli"

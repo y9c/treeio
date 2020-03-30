@@ -10,22 +10,22 @@
 
 from __future__ import annotations
 from typing import Optional, Iterable, List
-
+from itertools import chain
 
 
 class Tree:
     """
     Tree class is used to store a tree object.
 
-                ┌── raccoon
-        ┌─ none |
-        │       └── bear
+                 ┌── raccoon
+         ┌─ none |
+         │       └── bear
     Root ┤
-        |        ───── Xi ─ Omicron
-        ├ none ─|
-        │      ┌─── Iota
-        |
-        └ dog  ┼── Kappa
+         |        ───── Xi ─ Omicron
+         ├ none ─|
+         │      ┌─── Iota
+         |
+         └ dog  ┼── Kappa
                 └─ Lambda
     """
 
@@ -37,6 +37,11 @@ class Tree:
         self._parent: Optional[Tree] = None
         self._children: List[Tree] = []
 
+    def __iter__(self):
+        for v in chain(*map(iter, self.children)):
+            yield v
+        yield self
+
     def __repr__(self):
         """Print."""
         return f"<Tree: {self.name}>"
@@ -45,7 +50,8 @@ class Tree:
         """ Print tree in console by ascii art."""
         # return self.as_ascii()
         from .show import tree2ascii
-        return tree2ascii(True)(True)(self)
+
+        return tree2ascii(self, False, True)
 
     @property
     def parent(self) -> Optional[Tree]:
@@ -75,7 +81,7 @@ class Tree:
         if hasattr(value, "__iter__") and all(
             isinstance(n, type(self)) for n in value
         ):
-            self._children = list(value)
+            self._children = list(set(value))
             for node in value:
                 # should not use `.parent`, or will set twice
                 node._parent = self
@@ -87,7 +93,8 @@ class Tree:
         del self._children
 
     def append_child(self, tree: Tree):
-        self.children += [tree]
+        if tree not in self.children:
+            self.children += [tree]
         return self
 
     def extend_children(self, tree: List[Tree]):
@@ -116,6 +123,7 @@ class Tree:
     def is_root(self):
         """Chech node is a root(starting node) or not."""
         return self.parent is None
+
 
 if __name__ == "__main__":
     tree = Tree("A")

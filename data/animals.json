@@ -42,49 +42,5 @@
       },
       { "name": "dog", "branch_lenguh": 25.46154 }
     ]
-  },
-  {
-    "name": "root",
-    "branch_lenguh": 0,
-    "children": [
-      {
-        "name": "unknown",
-        "branch_lenguh": 0.846,
-        "children": [
-          { "name": "raccoon", "branch_lenguh": 19.19959 },
-          { "name": "bear", "branch_lenguh": 6.80041 }
-        ]
-      },
-      {
-        "name": "unknown",
-        "branch_lenguh": 3.87382,
-        "children": [
-          {
-            "name": "unknown",
-            "branch_lenguh": 7.52973,
-            "children": [
-              { "name": "sea_lion", "branch_lenguh": 11.997 },
-              { "name": "seal", "branch_lenguh": 12.003 }
-            ]
-          },
-          {
-            "name": "unknown",
-            "branch_lenguh": 6.80041,
-            "children": [
-              {
-                "name": "unknown",
-                "branch_lenguh": 20.59201,
-                "children": [
-                  { "name": "monkey", "branch_lenguh": 100.8593 },
-                  { "name": "cat", "branch_lenguh": 47.14069 }
-                ]
-              },
-              { "name": "weasel", "branch_lenguh": 18.87953 }
-            ]
-          }
-        ]
-      },
-      { "name": "dogggggggggg", "branch_lenguh": 25.46154 }
-    ]
   }
 ]
