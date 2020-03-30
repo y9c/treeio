@@ -12,21 +12,18 @@ from __future__ import annotations
 from typing import Optional, Iterable, List
 from itertools import chain
 
+from .utils import dedup
+
 
 class Tree:
     """
     Tree class is used to store a tree object.
 
-                 ┌── raccoon
-         ┌─ none |
-         │       └── bear
-    Root ┤
-         |        ───── Xi ─ Omicron
-         ├ none ─|
-         │      ┌─── Iota
-         |
-         └ dog  ┼── Kappa
-                └─ Lambda
+                  ┌ Theta
+          ┌─ Beta ┤
+    Alpha ┤       └ Delta
+          │
+          └ Gamma
     """
 
     def __init__(self, name="unknown", dist=None, supp=None):
@@ -81,7 +78,7 @@ class Tree:
         if hasattr(value, "__iter__") and all(
             isinstance(n, type(self)) for n in value
         ):
-            self._children = list(set(value))
+            self._children = dedup(value)
             for node in value:
                 # should not use `.parent`, or will set twice
                 node._parent = self

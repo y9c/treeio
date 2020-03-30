@@ -26,9 +26,9 @@ class TestTreeShow(unittest.TestCase):
         print(tree_shown)
         self.assertEqual(
             tree_shown,
-            "               ┌ Theta \n"
+            "               ┌ Delta \n"
             "       ┌─ Beta ┤\n"
-            " Alpha ┤       └ Delta \n"
+            " Alpha ┤       └ Theta \n"
             "       │\n"
             "       └ Gamma ",
         )
