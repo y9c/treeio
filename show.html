@@ -46,6 +46,7 @@ from functools import reduce
 from itertools import chain, takewhile
 
 from .tree import Tree
+from .jt import read_json
 
 
 def tree2ascii(tree: Tree, is_compact: bool, is_pruned: bool) -&gt; str:
@@ -70,24 +71,35 @@ def tree2ascii(tree: Tree, is_compact: bool, is_pruned: bool) -&gt; str:
                 └─ Lambda
     &#34;&#34;&#34;
 
-    # lmrFromStrings :: [String] -&gt; ([String], String, [String])
+    def padding(s, n=1):
+        return &#34; &#34; * n + s + &#34; &#34; * n
+
+    def compose(g):
+        &#34;&#34;&#34;Right to left function composition.&#34;&#34;&#34;
+        return lambda f: lambda x: g(f(x))
+
+    def intercalate(x: List[str]) -&gt; Callable:
+        &#34;&#34;&#34;The concatenation of xs interspersed with copies of x.&#34;&#34;&#34;
+        return (
+            lambda xs: list(
+                chain.from_iterable(
+                    reduce(lambda a, v: a + [x, v], xs[1:], [xs[0]])
+                )
+            )
+            if xs
+            else []
+        )
+
     def lmrFromStrings(xs):
         &#34;&#34;&#34;Lefts, Mid, Rights.&#34;&#34;&#34;
         i = len(xs) // 2
         ls, rs = xs[0:i], xs[i:]
         return ls, rs[0], rs[1:]
 
-    # stringsFromLMR :: ([String], String, [String]) -&gt; [String]
     def stringsFromLMR(lmr):
         ls, m, rs = lmr
         return ls + [m] + rs
 
-    # fghOverLMR
-    # :: (String -&gt; String)
-    # -&gt; (String -&gt; String)
-    # -&gt; (String -&gt; String)
-    # -&gt; ([String], String, [String])
-    # -&gt; ([String], String, [String])
     def fghOverLMR(f, g, h):
         def go(lmr):
             ls, m, rs = lmr
@@ -99,241 +111,107 @@ def tree2ascii(tree: Tree, is_compact: bool, is_pruned: bool) -&gt; str:
     def leftPad(n):
         return lambda s: (&#34; &#34; * n) + s
 
-    # treeFix :: (Char, Char, Char) -&gt; ([String], String, [String])
-    #                               -&gt;  [String]
     def treeFix(l, m, r):
         def cfix(x):
             return lambda xs: x + xs
 
         return compose(stringsFromLMR)(fghOverLMR(cfix(l), cfix(m), cfix(r)))
 
-    def lmrBuild(w, f):
-        def go(wsTree):
-            nChars, x = wsTree[&#34;root&#34;]
-            _x = (&#34;─&#34; * (w - nChars)) + x
-            xs = wsTree[&#34;nest&#34;]
-            lng = len(xs)
+    def levels(tree):
+        def go(x):
+            v = x
+            while len(v) &gt; 0:
+                yield v
+                v = [i for t in v if not t.is_leaf() in t for i in t.children]
 
-            # linked :: String -&gt; String
-            def linked(s):
-                c = s[0]
-                t = s[1:]
-                return (
-                    _x + &#34;┬&#34; + t
-                    if &#34;┌&#34; == c
-                    else (
-                        _x + &#34;┤&#34; + t
-                        if &#34;│&#34; == c
-                        else (_x + &#34;┼&#34; + t if &#34;├&#34; == c else (_x + &#34;┴&#34; + t))
-                    )
-                )
+        return [[padding(t.name) for t in x] for x in go([tree])]
 
-            # LEAF ------------------------------------
-            if 0 == lng:
-                return ([], _x, [])
-
-            # SINGLE CHILD ----------------------------
-            elif 1 == lng:
-
-                def lineLinked(z):
-                    return _x + &#34;─&#34; + z
-
-                rightAligned = leftPad(1 + w)
-                return fghOverLMR(rightAligned, lineLinked, rightAligned)(
-                    f(xs[0])
-                )
-
-            # CHILDREN --------------------------------
-            else:
-                rightAligned = leftPad(w)
-                lmrs = [f(x) for x in xs]
-                return fghOverLMR(rightAligned, linked, rightAligned)(
-                    lmrFromStrings(
-                        intercalate([] if is_compact else [&#34;│&#34;])(
-                            [treeFix(&#34; &#34;, &#34;┌&#34;, &#34;│&#34;)(lmrs[0])]
-                            + [treeFix(&#34;│&#34;, &#34;├&#34;, &#34;│&#34;)(x) for x in lmrs[1:-1]]
-                            + [treeFix(&#34;│&#34;, &#34;└&#34;, &#34; &#34;)(lmrs[-1])]
-                        )
-                    )
-                )
-
-        return lambda wsTree: go(wsTree)
-
-    # foldr :: (a -&gt; b -&gt; b) -&gt; b -&gt; [a] -&gt; b
-    def foldr(f):
+    def foldr(tree_dict):
         &#34;&#34;&#34;
         Right to left reduction of a list, using the binary operator f,
         and starting with an initial accumulator value.
         &#34;&#34;&#34;
 
-        def g(x, a):
-            return f(a, x)
+        level_widths = reduce(
+            lambda a, xs: a + [max(len(x) for x in xs)], levels(tree_dict), [],
+        )
 
-        return lambda acc: lambda xs: reduce(g, xs[::-1], acc)
+        def g(f, w):
+            def go(wsTree):
+                x = padding(wsTree.name)
+                nChars = len(x)
+                _x = (&#34;─&#34; * (w - nChars)) + x
+                xs = wsTree.children
+                lng = len(xs)
 
-    def measured(x) -&gt; Tuple[int, str]:
-        &#34;&#34;&#34;Value of a tree node tupled with string length.&#34;&#34;&#34;
-        s = &#34; &#34; + str(x) + &#34; &#34;
-        return len(s), s
+                def linked(s):
+                    c = s[0]
+                    t = s[1:]
+                    return (
+                        _x + &#34;┬&#34; + t
+                        if &#34;┌&#34; == c
+                        else (
+                            _x + &#34;┤&#34; + t
+                            if &#34;│&#34; == c
+                            else (_x + &#34;┼&#34; + t if &#34;├&#34; == c else (_x + &#34;┴&#34; + t))
+                        )
+                    )
 
-    def go(x):
-        return Node(measured(x[&#34;root&#34;]))([go(v) for v in x[&#34;nest&#34;]])
+                # LEAF ------------------------------------
+                if 0 == lng:
+                    return ([], _x, [])
 
-    measured_tree = go(tree)
-    print(measured_tree)
+                # SINGLE CHILD ----------------------------
+                elif 1 == lng:
 
-    print(levels(measured_tree))
+                    def lineLinked(z):
+                        return _x + &#34;─&#34; + z
 
-    level_widths = reduce(
-        lambda a, xs: a + [max(x[0] for x in xs)], levels(measured_tree), [],
-    )
-    print(level_widths)
+                    rightAligned = leftPad(1 + w)
+                    return fghOverLMR(rightAligned, lineLinked, rightAligned)(
+                        f(xs[0])
+                    )
 
-    tree_lines = stringsFromLMR(
-        foldr(lmrBuild)(None)(level_widths)(measured_tree)
-    )
+                # CHILDREN --------------------------------
+                else:
+                    rightAligned = leftPad(w)
+                    lmrs = [f(x) for x in xs]
+                    return fghOverLMR(rightAligned, linked, rightAligned)(
+                        lmrFromStrings(
+                            intercalate([] if is_compact else [&#34;│&#34;])(
+                                [treeFix(&#34; &#34;, &#34;┌&#34;, &#34;│&#34;)(lmrs[0])]
+                                + [
+                                    treeFix(&#34;│&#34;, &#34;├&#34;, &#34;│&#34;)(x)
+                                    for x in lmrs[1:-1]
+                                ]
+                                + [treeFix(&#34;│&#34;, &#34;└&#34;, &#34; &#34;)(lmrs[-1])]
+                            )
+                        )
+                    )
+
+            return lambda wsTree: go(wsTree)
+
+        return reduce(g, level_widths[::-1], None)(tree_dict)
+
+    tree_lines = stringsFromLMR(foldr(tree))
+
     # Modify tree lines if is not compact and is pruned.
     if not is_compact and is_pruned:
         tree_lines = [s for s in tree_lines if any(c not in &#34;│ &#34; for c in s)]
     return &#34;\n&#34;.join(tree_lines)
 
 
-# GENERIC -------------------------------------------------
-
-# Node :: a -&gt; [Tree a] -&gt; Tree a
-def Node(v):
-    &#34;&#34;&#34;Contructor for a Tree node which connects a
-        value of some kind to a list of zero or
-        more child trees.
-    &#34;&#34;&#34;
-    return lambda xs: {&#34;root&#34;: v, &#34;nest&#34;: xs}
-
-
-# compose (&lt;&lt;&lt;) :: (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
-def compose(g):
-    &#34;&#34;&#34;Right to left function composition.&#34;&#34;&#34;
-    return lambda f: lambda x: g(f(x))
-
-
-# concatMap :: (a -&gt; [b]) -&gt; [a] -&gt; [b]
-def concatMap(f):
-    &#34;&#34;&#34;A concatenated list over which a function has been mapped.
-        The list monad can be derived by using a function f which
-        wraps its output in a list,
-        (using an empty list to represent computational failure).
-    &#34;&#34;&#34;
-    return lambda xs: list(chain.from_iterable(map(f, xs)))
-
-
-# fmapTree :: (a -&gt; b) -&gt; Tree a -&gt; Tree b
-def fmapTree(f: Callable):
-    &#34;&#34;&#34;A new tree holding the results of
-        applying f to each root in
-        the existing tree.
-    &#34;&#34;&#34;
-
-    def go(x):
-        return Node(f(x[&#34;root&#34;]))([go(v) for v in x[&#34;nest&#34;]])
-
-    return lambda tree: go(tree)
-
-
-# intercalate :: [a] -&gt; [[a]] -&gt; [a]
-# intercalate :: String -&gt; [String] -&gt; String
-def intercalate(x: List[str]) -&gt; Callable:
-    &#34;&#34;&#34;The concatenation of xs interspersed with copies of x.&#34;&#34;&#34;
-    return (
-        lambda xs: list(
-            chain.from_iterable(
-                reduce(lambda a, v: a + [x, v], xs[1:], [xs[0]])
-            )
-        )
-        if xs
-        else []
-    )
-
-
-# iterate :: (a -&gt; a) -&gt; a -&gt; Gen [a]
-def iterate(f):
-    &#34;&#34;&#34;An infinite list of repeated
-        applications of f to x.
-    &#34;&#34;&#34;
-
-    def go(x):
-        v = x
-        while True:
-            yield v
-            v = f(v)
-
-    return lambda x: go(x)
-
-
-# levels :: Tree a -&gt; [[a]]
-def levels(tree):
-    &#34;&#34;&#34;A list of the nodes at each level of the tree.&#34;&#34;&#34;
-    return list(
-        map_(map_(root))(takewhile(bool, iterate(concatMap(nest))([tree])))
-    )
-
-
-# map :: (a -&gt; b) -&gt; [a] -&gt; [b]
-def map_(f):
-    &#34;&#34;&#34;The list obtained by applying f
-        to each element of xs.
-    &#34;&#34;&#34;
-    return lambda xs: list(map(f, xs))
-
-
-# nest :: Tree a -&gt; [Tree a]
-def nest(t):
-    &#34;&#34;&#34;Accessor function for children of tree node.&#34;&#34;&#34;
-    return t[&#34;nest&#34;] if &#34;nest&#34; in t else None
-
-
-# root :: Tree a -&gt; a
-def root(t):
-    &#34;&#34;&#34;Accessor function for data of tree node.&#34;&#34;&#34;
-    return t[&#34;root&#34;] if &#34;root&#34; in t else None
-
-
-# main :: IO ()
-# tree1 :: Tree Int
-tree1 = Node(1)(
-    [
-        Node(2)([Node(4)([Node(7)([])]), Node(5)([])]),
-        Node(3)([Node(6)([Node(8)([]), Node(9)([])])]),
-    ]
-)
-
-# tree :: Tree String
-tree2 = Node(&#34;Alpha&#34;)(
-    [
-        Node(&#34;Beta&#34;)(
-            [
-                Node(&#34;Epsilon&#34;)([]),
-                Node(&#34;Zeta&#34;)([]),
-                Node(&#34;Eta&#34;)([]),
-                Node(&#34;Theta&#34;)([Node(&#34;Mu&#34;)([]), Node(&#34;Nu&#34;)([])]),
-            ]
-        ),
-        Node(&#34;Gamma&#34;)(
-            [Node(&#34;Xiiiiiiiiiiiiiiiiiiiiii&#34;)([Node(&#34;Omicron&#34;)([])])]
-        ),
-        Node(&#34;Delta&#34;)(
-            [Node(&#34;Iota&#34;)([]), Node(&#34;Kappa&#34;)([]), Node(&#34;Lambda&#34;)([])]
-        ),
-    ]
-)
-
-
-def main():
-    print(tree2ascii(tree2, True, True))
+if __name__ == &#34;__main__&#34;:
+    with open(&#34;./data/animals.json&#34;) as f:
+        json_string = f.read()
+    treex = read_json(json_string)[0]
+    print(tree2ascii(treex, True, True))
     # &#34;Fully compacted (parents not all centered):&#34;
-    print(tree2ascii(tree2, True, False))
+    print(tree2ascii(treex, True, False))
     # &#34;Expanded with vertically centered parents:&#34;
-    print(tree2ascii(tree2, False, False))
+    print(tree2ascii(treex, False, False))
     # &#34;Centered parents with nodeless lines pruned out:&#34;
-    print(tree2ascii(tree2, False, True))</code></pre>
+    print(tree2ascii(treex, False, True))</code></pre>
 </details>
 </section>
 <section>
@@ -343,209 +221,6 @@ def main():
 <section>
 <h2 class="section-title" id="header-functions">Functions</h2>
 <dl>
-<dt id="treeio.show.Node"><code class="name flex">
-<span>def <span class="ident">Node</span></span>(<span>v)</span>
-</code></dt>
-<dd>
-<section class="desc"><p>Contructor for a Tree node which connects a
-value of some kind to a list of zero or
-more child trees.</p></section>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def Node(v):
-    &#34;&#34;&#34;Contructor for a Tree node which connects a
-        value of some kind to a list of zero or
-        more child trees.
-    &#34;&#34;&#34;
-    return lambda xs: {&#34;root&#34;: v, &#34;nest&#34;: xs}</code></pre>
-</details>
-</dd>
-<dt id="treeio.show.compose"><code class="name flex">
-<span>def <span class="ident">compose</span></span>(<span>g)</span>
-</code></dt>
-<dd>
-<section class="desc"><p>Right to left function composition.</p></section>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def compose(g):
-    &#34;&#34;&#34;Right to left function composition.&#34;&#34;&#34;
-    return lambda f: lambda x: g(f(x))</code></pre>
-</details>
-</dd>
-<dt id="treeio.show.concatMap"><code class="name flex">
-<span>def <span class="ident">concatMap</span></span>(<span>f)</span>
-</code></dt>
-<dd>
-<section class="desc"><p>A concatenated list over which a function has been mapped.
-The list monad can be derived by using a function f which
-wraps its output in a list,
-(using an empty list to represent computational failure).</p></section>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def concatMap(f):
-    &#34;&#34;&#34;A concatenated list over which a function has been mapped.
-        The list monad can be derived by using a function f which
-        wraps its output in a list,
-        (using an empty list to represent computational failure).
-    &#34;&#34;&#34;
-    return lambda xs: list(chain.from_iterable(map(f, xs)))</code></pre>
-</details>
-</dd>
-<dt id="treeio.show.fmapTree"><code class="name flex">
-<span>def <span class="ident">fmapTree</span></span>(<span>f)</span>
-</code></dt>
-<dd>
-<section class="desc"><p>A new tree holding the results of
-applying f to each root in
-the existing tree.</p></section>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def fmapTree(f: Callable):
-    &#34;&#34;&#34;A new tree holding the results of
-        applying f to each root in
-        the existing tree.
-    &#34;&#34;&#34;
-
-    def go(x):
-        return Node(f(x[&#34;root&#34;]))([go(v) for v in x[&#34;nest&#34;]])
-
-    return lambda tree: go(tree)</code></pre>
-</details>
-</dd>
-<dt id="treeio.show.intercalate"><code class="name flex">
-<span>def <span class="ident">intercalate</span></span>(<span>x)</span>
-</code></dt>
-<dd>
-<section class="desc"><p>The concatenation of xs interspersed with copies of x.</p></section>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def intercalate(x: List[str]) -&gt; Callable:
-    &#34;&#34;&#34;The concatenation of xs interspersed with copies of x.&#34;&#34;&#34;
-    return (
-        lambda xs: list(
-            chain.from_iterable(
-                reduce(lambda a, v: a + [x, v], xs[1:], [xs[0]])
-            )
-        )
-        if xs
-        else []
-    )</code></pre>
-</details>
-</dd>
-<dt id="treeio.show.iterate"><code class="name flex">
-<span>def <span class="ident">iterate</span></span>(<span>f)</span>
-</code></dt>
-<dd>
-<section class="desc"><p>An infinite list of repeated
-applications of f to x.</p></section>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def iterate(f):
-    &#34;&#34;&#34;An infinite list of repeated
-        applications of f to x.
-    &#34;&#34;&#34;
-
-    def go(x):
-        v = x
-        while True:
-            yield v
-            v = f(v)
-
-    return lambda x: go(x)</code></pre>
-</details>
-</dd>
-<dt id="treeio.show.levels"><code class="name flex">
-<span>def <span class="ident">levels</span></span>(<span>tree)</span>
-</code></dt>
-<dd>
-<section class="desc"><p>A list of the nodes at each level of the tree.</p></section>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def levels(tree):
-    &#34;&#34;&#34;A list of the nodes at each level of the tree.&#34;&#34;&#34;
-    return list(
-        map_(map_(root))(takewhile(bool, iterate(concatMap(nest))([tree])))
-    )</code></pre>
-</details>
-</dd>
-<dt id="treeio.show.main"><code class="name flex">
-<span>def <span class="ident">main</span></span>(<span>)</span>
-</code></dt>
-<dd>
-<section class="desc"></section>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def main():
-    print(tree2ascii(tree2, True, True))
-    # &#34;Fully compacted (parents not all centered):&#34;
-    print(tree2ascii(tree2, True, False))
-    # &#34;Expanded with vertically centered parents:&#34;
-    print(tree2ascii(tree2, False, False))
-    # &#34;Centered parents with nodeless lines pruned out:&#34;
-    print(tree2ascii(tree2, False, True))</code></pre>
-</details>
-</dd>
-<dt id="treeio.show.map_"><code class="name flex">
-<span>def <span class="ident">map_</span></span>(<span>f)</span>
-</code></dt>
-<dd>
-<section class="desc"><p>The list obtained by applying f
-to each element of xs.</p></section>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def map_(f):
-    &#34;&#34;&#34;The list obtained by applying f
-        to each element of xs.
-    &#34;&#34;&#34;
-    return lambda xs: list(map(f, xs))</code></pre>
-</details>
-</dd>
-<dt id="treeio.show.nest"><code class="name flex">
-<span>def <span class="ident">nest</span></span>(<span>t)</span>
-</code></dt>
-<dd>
-<section class="desc"><p>Accessor function for children of tree node.</p></section>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def nest(t):
-    &#34;&#34;&#34;Accessor function for children of tree node.&#34;&#34;&#34;
-    return t[&#34;nest&#34;] if &#34;nest&#34; in t else None</code></pre>
-</details>
-</dd>
-<dt id="treeio.show.root"><code class="name flex">
-<span>def <span class="ident">root</span></span>(<span>t)</span>
-</code></dt>
-<dd>
-<section class="desc"><p>Accessor function for data of tree node.</p></section>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def root(t):
-    &#34;&#34;&#34;Accessor function for data of tree node.&#34;&#34;&#34;
-    return t[&#34;root&#34;] if &#34;root&#34; in t else None</code></pre>
-</details>
-</dd>
 <dt id="treeio.show.tree2ascii"><code class="name flex">
 <span>def <span class="ident">tree2ascii</span></span>(<span>tree, is_compact, is_pruned)</span>
 </code></dt>
@@ -594,24 +269,35 @@ Demo output.</p>
                 └─ Lambda
     &#34;&#34;&#34;
 
-    # lmrFromStrings :: [String] -&gt; ([String], String, [String])
+    def padding(s, n=1):
+        return &#34; &#34; * n + s + &#34; &#34; * n
+
+    def compose(g):
+        &#34;&#34;&#34;Right to left function composition.&#34;&#34;&#34;
+        return lambda f: lambda x: g(f(x))
+
+    def intercalate(x: List[str]) -&gt; Callable:
+        &#34;&#34;&#34;The concatenation of xs interspersed with copies of x.&#34;&#34;&#34;
+        return (
+            lambda xs: list(
+                chain.from_iterable(
+                    reduce(lambda a, v: a + [x, v], xs[1:], [xs[0]])
+                )
+            )
+            if xs
+            else []
+        )
+
     def lmrFromStrings(xs):
         &#34;&#34;&#34;Lefts, Mid, Rights.&#34;&#34;&#34;
         i = len(xs) // 2
         ls, rs = xs[0:i], xs[i:]
         return ls, rs[0], rs[1:]
 
-    # stringsFromLMR :: ([String], String, [String]) -&gt; [String]
     def stringsFromLMR(lmr):
         ls, m, rs = lmr
         return ls + [m] + rs
 
-    # fghOverLMR
-    # :: (String -&gt; String)
-    # -&gt; (String -&gt; String)
-    # -&gt; (String -&gt; String)
-    # -&gt; ([String], String, [String])
-    # -&gt; ([String], String, [String])
     def fghOverLMR(f, g, h):
         def go(lmr):
             ls, m, rs = lmr
@@ -623,99 +309,90 @@ Demo output.</p>
     def leftPad(n):
         return lambda s: (&#34; &#34; * n) + s
 
-    # treeFix :: (Char, Char, Char) -&gt; ([String], String, [String])
-    #                               -&gt;  [String]
     def treeFix(l, m, r):
         def cfix(x):
             return lambda xs: x + xs
 
         return compose(stringsFromLMR)(fghOverLMR(cfix(l), cfix(m), cfix(r)))
 
-    def lmrBuild(w, f):
-        def go(wsTree):
-            nChars, x = wsTree[&#34;root&#34;]
-            _x = (&#34;─&#34; * (w - nChars)) + x
-            xs = wsTree[&#34;nest&#34;]
-            lng = len(xs)
+    def levels(tree):
+        def go(x):
+            v = x
+            while len(v) &gt; 0:
+                yield v
+                v = [i for t in v if not t.is_leaf() in t for i in t.children]
 
-            # linked :: String -&gt; String
-            def linked(s):
-                c = s[0]
-                t = s[1:]
-                return (
-                    _x + &#34;┬&#34; + t
-                    if &#34;┌&#34; == c
-                    else (
-                        _x + &#34;┤&#34; + t
-                        if &#34;│&#34; == c
-                        else (_x + &#34;┼&#34; + t if &#34;├&#34; == c else (_x + &#34;┴&#34; + t))
-                    )
-                )
+        return [[padding(t.name) for t in x] for x in go([tree])]
 
-            # LEAF ------------------------------------
-            if 0 == lng:
-                return ([], _x, [])
-
-            # SINGLE CHILD ----------------------------
-            elif 1 == lng:
-
-                def lineLinked(z):
-                    return _x + &#34;─&#34; + z
-
-                rightAligned = leftPad(1 + w)
-                return fghOverLMR(rightAligned, lineLinked, rightAligned)(
-                    f(xs[0])
-                )
-
-            # CHILDREN --------------------------------
-            else:
-                rightAligned = leftPad(w)
-                lmrs = [f(x) for x in xs]
-                return fghOverLMR(rightAligned, linked, rightAligned)(
-                    lmrFromStrings(
-                        intercalate([] if is_compact else [&#34;│&#34;])(
-                            [treeFix(&#34; &#34;, &#34;┌&#34;, &#34;│&#34;)(lmrs[0])]
-                            + [treeFix(&#34;│&#34;, &#34;├&#34;, &#34;│&#34;)(x) for x in lmrs[1:-1]]
-                            + [treeFix(&#34;│&#34;, &#34;└&#34;, &#34; &#34;)(lmrs[-1])]
-                        )
-                    )
-                )
-
-        return lambda wsTree: go(wsTree)
-
-    # foldr :: (a -&gt; b -&gt; b) -&gt; b -&gt; [a] -&gt; b
-    def foldr(f):
+    def foldr(tree_dict):
         &#34;&#34;&#34;
         Right to left reduction of a list, using the binary operator f,
         and starting with an initial accumulator value.
         &#34;&#34;&#34;
 
-        def g(x, a):
-            return f(a, x)
+        level_widths = reduce(
+            lambda a, xs: a + [max(len(x) for x in xs)], levels(tree_dict), [],
+        )
 
-        return lambda acc: lambda xs: reduce(g, xs[::-1], acc)
+        def g(f, w):
+            def go(wsTree):
+                x = padding(wsTree.name)
+                nChars = len(x)
+                _x = (&#34;─&#34; * (w - nChars)) + x
+                xs = wsTree.children
+                lng = len(xs)
 
-    def measured(x) -&gt; Tuple[int, str]:
-        &#34;&#34;&#34;Value of a tree node tupled with string length.&#34;&#34;&#34;
-        s = &#34; &#34; + str(x) + &#34; &#34;
-        return len(s), s
+                def linked(s):
+                    c = s[0]
+                    t = s[1:]
+                    return (
+                        _x + &#34;┬&#34; + t
+                        if &#34;┌&#34; == c
+                        else (
+                            _x + &#34;┤&#34; + t
+                            if &#34;│&#34; == c
+                            else (_x + &#34;┼&#34; + t if &#34;├&#34; == c else (_x + &#34;┴&#34; + t))
+                        )
+                    )
 
-    def go(x):
-        return Node(measured(x[&#34;root&#34;]))([go(v) for v in x[&#34;nest&#34;]])
+                # LEAF ------------------------------------
+                if 0 == lng:
+                    return ([], _x, [])
 
-    measured_tree = go(tree)
-    print(measured_tree)
+                # SINGLE CHILD ----------------------------
+                elif 1 == lng:
 
-    print(levels(measured_tree))
+                    def lineLinked(z):
+                        return _x + &#34;─&#34; + z
 
-    level_widths = reduce(
-        lambda a, xs: a + [max(x[0] for x in xs)], levels(measured_tree), [],
-    )
-    print(level_widths)
+                    rightAligned = leftPad(1 + w)
+                    return fghOverLMR(rightAligned, lineLinked, rightAligned)(
+                        f(xs[0])
+                    )
 
-    tree_lines = stringsFromLMR(
-        foldr(lmrBuild)(None)(level_widths)(measured_tree)
-    )
+                # CHILDREN --------------------------------
+                else:
+                    rightAligned = leftPad(w)
+                    lmrs = [f(x) for x in xs]
+                    return fghOverLMR(rightAligned, linked, rightAligned)(
+                        lmrFromStrings(
+                            intercalate([] if is_compact else [&#34;│&#34;])(
+                                [treeFix(&#34; &#34;, &#34;┌&#34;, &#34;│&#34;)(lmrs[0])]
+                                + [
+                                    treeFix(&#34;│&#34;, &#34;├&#34;, &#34;│&#34;)(x)
+                                    for x in lmrs[1:-1]
+                                ]
+                                + [treeFix(&#34;│&#34;, &#34;└&#34;, &#34; &#34;)(lmrs[-1])]
+                            )
+                        )
+                    )
+
+            return lambda wsTree: go(wsTree)
+
+        return reduce(g, level_widths[::-1], None)(tree_dict)
+
+    tree_lines = stringsFromLMR(foldr(tree))
+
     # Modify tree lines if is not compact and is pruned.
     if not is_compact and is_pruned:
         tree_lines = [s for s in tree_lines if any(c not in &#34;│ &#34; for c in s)]
@@ -739,18 +416,7 @@ Demo output.</p>
 </ul>
 </li>
 <li><h3><a href="#header-functions">Functions</a></h3>
-<ul class="two-column">
-<li><code><a title="treeio.show.Node" href="#treeio.show.Node">Node</a></code></li>
-<li><code><a title="treeio.show.compose" href="#treeio.show.compose">compose</a></code></li>
-<li><code><a title="treeio.show.concatMap" href="#treeio.show.concatMap">concatMap</a></code></li>
-<li><code><a title="treeio.show.fmapTree" href="#treeio.show.fmapTree">fmapTree</a></code></li>
-<li><code><a title="treeio.show.intercalate" href="#treeio.show.intercalate">intercalate</a></code></li>
-<li><code><a title="treeio.show.iterate" href="#treeio.show.iterate">iterate</a></code></li>
-<li><code><a title="treeio.show.levels" href="#treeio.show.levels">levels</a></code></li>
-<li><code><a title="treeio.show.main" href="#treeio.show.main">main</a></code></li>
-<li><code><a title="treeio.show.map_" href="#treeio.show.map_">map_</a></code></li>
-<li><code><a title="treeio.show.nest" href="#treeio.show.nest">nest</a></code></li>
-<li><code><a title="treeio.show.root" href="#treeio.show.root">root</a></code></li>
+<ul class="">
 <li><code><a title="treeio.show.tree2ascii" href="#treeio.show.tree2ascii">tree2ascii</a></code></li>
 </ul>
 </li>
