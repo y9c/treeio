@@ -56,13 +56,17 @@ class Tree:
           └ Gamma
     &#34;&#34;&#34;
 
-    def __init__(self, name=&#34;unknown&#34;, dist=None, supp=None):
+    def __init__(self, name=&#34;unknown&#34;, dist=None, supp=None, **kwargs):
         &#34;&#34;&#34;Init.&#34;&#34;&#34;
         self.name: str = name
         self.dist: Optional[float] = dist
         self.supp: Optional[float] = supp
         self._parent: Optional[Tree] = None
         self._children: List[Tree] = []
+        # support any value
+        # Is this a good feature or not?
+        for key, value in kwargs.items():
+            setattr(self, key, value)
 
     def __iter__(self):
         for v in chain(*map(iter, self.children)):
@@ -171,7 +175,7 @@ if __name__ == &#34;__main__&#34;:
 <dl>
 <dt id="treeio.tree.Tree"><code class="flex name class">
 <span>class <span class="ident">Tree</span></span>
-<span>(</span><span>name='unknown', dist=None, supp=None)</span>
+<span>(</span><span>name='unknown', dist=None, supp=None, **kwargs)</span>
 </code></dt>
 <dd>
 <section class="desc"><p>Tree class is used to store a tree object.</p>
@@ -198,13 +202,17 @@ if __name__ == &#34;__main__&#34;:
           └ Gamma
     &#34;&#34;&#34;
 
-    def __init__(self, name=&#34;unknown&#34;, dist=None, supp=None):
+    def __init__(self, name=&#34;unknown&#34;, dist=None, supp=None, **kwargs):
         &#34;&#34;&#34;Init.&#34;&#34;&#34;
         self.name: str = name
         self.dist: Optional[float] = dist
         self.supp: Optional[float] = supp
         self._parent: Optional[Tree] = None
         self._children: List[Tree] = []
+        # support any value
+        # Is this a good feature or not?
+        for key, value in kwargs.items():
+            setattr(self, key, value)
 
     def __iter__(self):
         for v in chain(*map(iter, self.children)):

@@ -44,41 +44,42 @@ from typing import List
 from .tree import Tree
 
 
-def read_json(json_string: str) -&gt; List[Tree]:
+def read_json(
+    json_string: str,
+    name_key=&#34;name&#34;,
+    child_key=&#34;children&#34;,
+    dist_key=&#34;branch_length&#34;,
+    supp_key=&#34;support&#34;,
+) -&gt; List[Tree]:
     &#34;&#34;&#34;Return a json object in the format desribed below
 
     ```json
     {
       &#34;name&#34;: &#34;root&#34;,
-      &#34;branch_lenguh&#34;: 0,
+      &#34;branch_length&#34;: 0,
       &#34;children&#34;: [
         {
           &#34;name&#34;: &#34;unknown&#34;,
-          &#34;branch_lenguh&#34;: 0.846,
+          &#34;branch_length&#34;: 0.846,
           &#34;children&#34;: [
-            { &#34;name&#34;: &#34;raccoon&#34;, &#34;branch_lenguh&#34;: 19.19959 },
-            { &#34;name&#34;: &#34;bear&#34;, &#34;branch_lenguh&#34;: 6.80041 }
+            { &#34;name&#34;: &#34;raccoon&#34;, &#34;branch_length&#34;: 19.19959 },
+            { &#34;name&#34;: &#34;bear&#34;, &#34;branch_length&#34;: 6.80041 }
           ]
         },
         {
           &#34;name&#34;: &#34;unknown&#34;,
-          &#34;branch_lenguh&#34;: 3.87382,
+          &#34;branch_length&#34;: 3.87382,
           &#34;children&#34;: [
 
           ...
 
           ]
         },
-        { &#34;name&#34;: &#34;dog&#34;, &#34;branch_lenguh&#34;: 25.46154 }
+        { &#34;name&#34;: &#34;dog&#34;, &#34;branch_length&#34;: 25.46154 }
       ]
     }
     ```
     &#34;&#34;&#34;
-
-    name_key = &#34;name&#34;
-    child_key = &#34;children&#34;
-    dist_key = &#34;branch_lenguh&#34;
-    supp_key = &#34;support&#34;
 
     data = json.loads(json_string)
     # assert type(data) is dict, &#34;Only single tree is supported.&#34;
@@ -106,6 +107,31 @@ def read_json(json_string: str) -&gt; List[Tree]:
     return [t.isolated() for t in tree_scratch.children]
 
 
+def write_json(
+    trees: List[Tree],
+    name_key=&#34;name&#34;,
+    child_key=&#34;children&#34;,
+    dist_key=&#34;branch_length&#34;,
+    supp_key=&#34;support&#34;,
+) -&gt; str:
+    &#34;&#34;&#34;Return a json object in the format desribed below
+    &#34;&#34;&#34;
+
+    def _record_node(node):
+        attr_key = [&#34;name&#34;, &#34;dist&#34;, &#34;supp&#34;]
+        attr_values = [name_key, dist_key, supp_key]
+        data = {v: getattr(node, k) for k, v in zip(attr_key, attr_values)}
+        children = [_record_node(child) for child in node.children]
+        if children:
+            data[child_key] = children
+        return data
+
+    data = _record_node(trees[0])
+
+    json_string = json.dumps(data)
+    return json_string
+
+
 if __name__ == &#34;__main__&#34;:
     with open(&#34;../data/animals.json&#34;) as f:
         TREE = read_json(f.read())
@@ -120,32 +146,32 @@ if __name__ == &#34;__main__&#34;:
 <h2 class="section-title" id="header-functions">Functions</h2>
 <dl>
 <dt id="treeio.jt.read_json"><code class="name flex">
-<span>def <span class="ident">read_json</span></span>(<span>json_string)</span>
+<span>def <span class="ident">read_json</span></span>(<span>json_string, name_key='name', child_key='children', dist_key='branch_length', supp_key='support')</span>
 </code></dt>
 <dd>
 <section class="desc"><p>Return a json object in the format desribed below</p>
 <pre><code class="json">{
   &quot;name&quot;: &quot;root&quot;,
-  &quot;branch_lenguh&quot;: 0,
+  &quot;branch_length&quot;: 0,
   &quot;children&quot;: [
     {
       &quot;name&quot;: &quot;unknown&quot;,
-      &quot;branch_lenguh&quot;: 0.846,
+      &quot;branch_length&quot;: 0.846,
       &quot;children&quot;: [
-        { &quot;name&quot;: &quot;raccoon&quot;, &quot;branch_lenguh&quot;: 19.19959 },
-        { &quot;name&quot;: &quot;bear&quot;, &quot;branch_lenguh&quot;: 6.80041 }
+        { &quot;name&quot;: &quot;raccoon&quot;, &quot;branch_length&quot;: 19.19959 },
+        { &quot;name&quot;: &quot;bear&quot;, &quot;branch_length&quot;: 6.80041 }
       ]
     },
     {
       &quot;name&quot;: &quot;unknown&quot;,
-      &quot;branch_lenguh&quot;: 3.87382,
+      &quot;branch_length&quot;: 3.87382,
       &quot;children&quot;: [
 
       ...
 
       ]
     },
-    { &quot;name&quot;: &quot;dog&quot;, &quot;branch_lenguh&quot;: 25.46154 }
+    { &quot;name&quot;: &quot;dog&quot;, &quot;branch_length&quot;: 25.46154 }
   ]
 }
 </code></pre></section>
@@ -153,41 +179,42 @@ if __name__ == &#34;__main__&#34;:
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def read_json(json_string: str) -&gt; List[Tree]:
+<pre><code class="python">def read_json(
+    json_string: str,
+    name_key=&#34;name&#34;,
+    child_key=&#34;children&#34;,
+    dist_key=&#34;branch_length&#34;,
+    supp_key=&#34;support&#34;,
+) -&gt; List[Tree]:
     &#34;&#34;&#34;Return a json object in the format desribed below
 
     ```json
     {
       &#34;name&#34;: &#34;root&#34;,
-      &#34;branch_lenguh&#34;: 0,
+      &#34;branch_length&#34;: 0,
       &#34;children&#34;: [
         {
           &#34;name&#34;: &#34;unknown&#34;,
-          &#34;branch_lenguh&#34;: 0.846,
+          &#34;branch_length&#34;: 0.846,
           &#34;children&#34;: [
-            { &#34;name&#34;: &#34;raccoon&#34;, &#34;branch_lenguh&#34;: 19.19959 },
-            { &#34;name&#34;: &#34;bear&#34;, &#34;branch_lenguh&#34;: 6.80041 }
+            { &#34;name&#34;: &#34;raccoon&#34;, &#34;branch_length&#34;: 19.19959 },
+            { &#34;name&#34;: &#34;bear&#34;, &#34;branch_length&#34;: 6.80041 }
           ]
         },
         {
           &#34;name&#34;: &#34;unknown&#34;,
-          &#34;branch_lenguh&#34;: 3.87382,
+          &#34;branch_length&#34;: 3.87382,
           &#34;children&#34;: [
 
           ...
 
           ]
         },
-        { &#34;name&#34;: &#34;dog&#34;, &#34;branch_lenguh&#34;: 25.46154 }
+        { &#34;name&#34;: &#34;dog&#34;, &#34;branch_length&#34;: 25.46154 }
       ]
     }
     ```
     &#34;&#34;&#34;
-
-    name_key = &#34;name&#34;
-    child_key = &#34;children&#34;
-    dist_key = &#34;branch_lenguh&#34;
-    supp_key = &#34;support&#34;
 
     data = json.loads(json_string)
     # assert type(data) is dict, &#34;Only single tree is supported.&#34;
@@ -215,6 +242,40 @@ if __name__ == &#34;__main__&#34;:
     return [t.isolated() for t in tree_scratch.children]</code></pre>
 </details>
 </dd>
+<dt id="treeio.jt.write_json"><code class="name flex">
+<span>def <span class="ident">write_json</span></span>(<span>trees, name_key='name', child_key='children', dist_key='branch_length', supp_key='support')</span>
+</code></dt>
+<dd>
+<section class="desc"><p>Return a json object in the format desribed below</p></section>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def write_json(
+    trees: List[Tree],
+    name_key=&#34;name&#34;,
+    child_key=&#34;children&#34;,
+    dist_key=&#34;branch_length&#34;,
+    supp_key=&#34;support&#34;,
+) -&gt; str:
+    &#34;&#34;&#34;Return a json object in the format desribed below
+    &#34;&#34;&#34;
+
+    def _record_node(node):
+        attr_key = [&#34;name&#34;, &#34;dist&#34;, &#34;supp&#34;]
+        attr_values = [name_key, dist_key, supp_key]
+        data = {v: getattr(node, k) for k, v in zip(attr_key, attr_values)}
+        children = [_record_node(child) for child in node.children]
+        if children:
+            data[child_key] = children
+        return data
+
+    data = _record_node(trees[0])
+
+    json_string = json.dumps(data)
+    return json_string</code></pre>
+</details>
+</dd>
 </dl>
 </section>
 <section>
@@ -234,6 +295,7 @@ if __name__ == &#34;__main__&#34;:
 <li><h3><a href="#header-functions">Functions</a></h3>
 <ul class="">
 <li><code><a title="treeio.jt.read_json" href="#treeio.jt.read_json">read_json</a></code></li>
+<li><code><a title="treeio.jt.write_json" href="#treeio.jt.write_json">write_json</a></code></li>
 </ul>
 </li>
 </ul>
