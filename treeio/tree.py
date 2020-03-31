@@ -28,13 +28,17 @@ class Tree:
           └ Gamma
     """
 
-    def __init__(self, name="unknown", dist=None, supp=None):
+    def __init__(self, name="unknown", dist=None, supp=None, **kwargs):
         """Init."""
         self.name: str = name
         self.dist: Optional[float] = dist
         self.supp: Optional[float] = supp
         self._parent: Optional[Tree] = None
         self._children: List[Tree] = []
+        # support any value
+        # Is this a good feature or not?
+        for key, value in kwargs.items():
+            setattr(self, key, value)
 
     def __iter__(self):
         for v in chain(*map(iter, self.children)):
