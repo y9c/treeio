@@ -6,8 +6,6 @@ Top-level package for treeio.
 A pure-Python library for reading, writing, manipulating and plotting
 phylogenetic trees.  The core engine works on the standard library alone;
 plotting uses matplotlib (imported lazily on first draw).
-
-.. include:: ../README.md
 """
 
 __author__ = "Ye Chang"
