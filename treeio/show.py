@@ -18,10 +18,10 @@ from functools import reduce
 from itertools import chain, takewhile
 
 from .tree import Tree
-from .jt import read_json
+from .json_io import read_json
 
 
-def tree2ascii(tree: Tree, is_compact: bool, is_pruned: bool) -> str:
+def tree_to_ascii(tree: Tree, is_compact: bool, is_pruned: bool) -> str:
     """
     Monospaced UTF8 left-to-right text tree.
 
@@ -42,7 +42,34 @@ def tree2ascii(tree: Tree, is_compact: bool, is_pruned: bool) -> str:
         └ Delta ┼── Kappa
                 └─ Lambda
     """
+    import sys
 
+    # the pretty-printer recurses by tree depth; give deep trees headroom.
+    depth = _tree_depth(tree)
+    need = depth * 3 + 1000
+    old_limit = sys.getrecursionlimit()
+    if need > old_limit:
+        sys.setrecursionlimit(need)
+    try:
+        return _tree_to_ascii_body(tree, is_compact, is_pruned)
+    finally:
+        sys.setrecursionlimit(old_limit)
+
+
+def _tree_depth(tree: Tree) -> int:
+    """Maximum edges from the root to any node (iterative, deep-tree safe)."""
+    maxd = 0
+    stack = [(tree, 0)]
+    while stack:
+        node, d = stack.pop()
+        if d > maxd:
+            maxd = d
+        for c in node._children:
+            stack.append((c, d + 1))
+    return maxd
+
+
+def _tree_to_ascii_body(tree: Tree, is_compact: bool, is_pruned: bool) -> str:
     def padding(s, n=1):
         return " " * n + s + " " * n
 
@@ -90,11 +117,12 @@ def tree2ascii(tree: Tree, is_compact: bool, is_pruned: bool) -> str:
         return compose(stringsFromLMR)(fghOverLMR(cfix(l), cfix(m), cfix(r)))
 
     def levels(tree):
+        """Nodes of the tree at each depth, breadth-first from the root."""
         def go(x):
             v = x
             while len(v) > 0:
                 yield v
-                v = [i for t in v if not t.is_leaf() in t for i in t.children]
+                v = [i for t in v for i in t.children]
 
         return [[padding(t.name) for t in x] for x in go([tree])]
 
@@ -177,10 +205,10 @@ if __name__ == "__main__":
     with open("./data/animals.json") as f:
         json_string = f.read()
     treex = read_json(json_string)[0]
-    print(tree2ascii(treex, True, True))
+    print(tree_to_ascii(treex, True, True))
     # "Fully compacted (parents not all centered):"
-    print(tree2ascii(treex, True, False))
+    print(tree_to_ascii(treex, True, False))
     # "Expanded with vertically centered parents:"
-    print(tree2ascii(treex, False, False))
+    print(tree_to_ascii(treex, False, False))
     # "Centered parents with nodeless lines pruned out:"
-    print(tree2ascii(treex, False, True))
+    print(tree_to_ascii(treex, False, True))

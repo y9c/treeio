@@ -20,8 +20,8 @@ def read_json(
     json_string: str,
     name_key="name",
     child_key="children",
-    dist_key="branch_length",
-    supp_key="support",
+    branch_length_key="branch_length",
+    support_key="support",
 ) -> List[Tree]:
     """Return a json object in the format desribed below
 
@@ -63,8 +63,8 @@ def read_json(
         if isinstance(obj, dict):
             node = Tree(
                 name=obj.get(name_key),
-                dist=obj.get(dist_key),
-                supp=obj.get(supp_key),
+                branch_length=obj.get(branch_length_key),
+                support=obj.get(support_key),
             )
             tree_cur.append_child(node)
             if child_key in obj:
@@ -80,28 +80,40 @@ def read_json(
 
 
 def write_json(
-    trees: List[Tree],
+    trees,
     name_key="name",
     child_key="children",
-    dist_key="branch_length",
-    supp_key="support",
+    branch_length_key="branch_length",
+    support_key="support",
 ) -> str:
     """Return a json object in the format desribed below
     """
 
     def _record_node(node):
-        attr_key = ["name", "dist", "supp"]
-        attr_values = [name_key, dist_key, supp_key]
-        data = {v: getattr(node, k) for k, v in zip(attr_key, attr_values)}
+        attr_key = ["name", "branch_length", "support"]
+        attr_values = [name_key, branch_length_key, support_key]
+        data = {v: _json_ok(getattr(node, k)) for k, v in zip(attr_key, attr_values)}
         children = [_record_node(child) for child in node.children]
         if children:
             data[child_key] = children
         return data
 
-    data = _record_node(trees[0])
+    if isinstance(trees, Tree):
+        trees = [trees]
 
-    json_string = json.dumps(data)
+    if len(trees) == 1:
+        json_string = json.dumps(_record_node(trees[0]))
+    else:
+        json_string = json.dumps([_record_node(t) for t in trees])
     return json_string
+
+
+def _json_ok(value):
+    """Return JSON-safe values (non-finite floats become ``None``)."""
+    if isinstance(value, float):
+        import math
+        return value if math.isfinite(value) else None
+    return value
 
 
 if __name__ == "__main__":

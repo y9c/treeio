@@ -4,21 +4,26 @@ build-backend = "poetry.masonry.api"
 
 [tool.poetry]
 name = "treeio"
-version = "0.0.0.dev5"
-description = "A pure python parser for tree data format IO"
+version = "0.0.0.dev6"
+description = "A pure python library to parse, manipulate, annotate and plot phylogenetic trees"
 authors = ["Ye Chang <yech1990@gmail.com>"]
 license = "MIT"
 readme = "README.md"
 repository = "https://github.com/yech1990/treeio"
 
 [tool.poetry.dependencies]
-python = "^3.8"
+python = ">=3.9,<4"
 click = "^7.0.0"
+
+# optional plotting backend
+[tool.poetry.extras]
+plot = ["matplotlib"]
 
 [tool.poetry.dev-dependencies]
 twine = "^3.0.0"
 pdoc3 = "^0.7.5"
 pytest = ""
+matplotlib = "*"
 
 [tool.poetry.scripts]
 treeio = "treeio.cli:cli"

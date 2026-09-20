@@ -6,10 +6,15 @@
 Welcome to treeio's documentation!
 ==================================
 
+``treeio`` is a pure-Python library for reading, writing, manipulating,
+annotating and plotting phylogenetic trees.  The core engine works on the
+standard library alone; plotting uses matplotlib.
+
 .. toctree::
    :maxdepth: 2
    :caption: Contents:
 
+   modules
 
 
 Indices and tables

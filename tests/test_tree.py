@@ -18,7 +18,7 @@ class TestTreeClass(unittest.TestCase):
         node_e = Tree("Theta", parent=node_b)
 
         tree = node_a
-        tree_shown = show.tree2ascii(tree, False, False)
+        tree_shown = show.tree_to_ascii(tree, False, False)
         print(tree_shown)
         self.assertEqual(
             tree_shown,

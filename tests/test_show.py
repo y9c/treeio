@@ -7,7 +7,7 @@ import unittest
 
 from treeio import show
 from treeio import Tree
-from treeio import jt
+from treeio import json_io
 
 
 class TestTreeShow(unittest.TestCase):
@@ -22,7 +22,7 @@ class TestTreeShow(unittest.TestCase):
         node_a.children = [node_b, node_c]
         node_b.children = [node_d, node_e]
 
-        tree_shown = show.tree2ascii(tree, False, False)
+        tree_shown = show.tree_to_ascii(tree, False, False)
         print(tree_shown)
         self.assertEqual(
             tree_shown,
