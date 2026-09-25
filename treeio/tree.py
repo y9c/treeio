@@ -956,6 +956,21 @@ class Tree:
 
         return _render(self, backend=backend, layout=layout, **kwargs)
 
+    @classmethod
+    def from_alignment(cls, sequences, model: str = "p", rooted: bool = True) -> "Tree":
+        """Build a Tree from an alignment via distance + neighbour joining.
+
+        ``sequences`` may be a ``{name: sequence}`` dict, iterable of
+        ``(name, sequence)`` pairs, raw sequence strings, or Biopython
+        ``SeqRecord`` objects (aligned, equal length).  ``model`` selects the
+        distance model (``"p"`` or ``"jc"`` / ``"jc69"``).
+
+        Equivalent to :func:`treeio.build_tree`.
+        """
+        from .phylogeny import build_tree
+
+        return build_tree(sequences, model=model, rooted=rooted)
+
     def as_dict(self, **fields) -> dict:
         """Serialize to a nested python dict (deep-tree safe, iterative).
 

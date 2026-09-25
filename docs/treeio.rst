@@ -15,6 +15,11 @@ Submodules
    :undoc-members:
    :show-inheritance:
 
+.. automodule:: treeio.phylogeny
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 .. automodule:: treeio.newick
    :members:
    :undoc-members:

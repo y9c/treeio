@@ -10,7 +10,7 @@ plotting uses matplotlib (imported lazily on first draw).
 
 __author__ = "Ye Chang"
 __email__ = "yech1990@gmail.com"
-__version__ = "0.0.0.dev6"
+__version__ = "0.0.0.dev7"
 
 from .tree import Tree, fortify
 from .newick import read_newick, read_newicks, write_newick
@@ -23,6 +23,7 @@ from .nexml import read_nexml, read_nexmls, write_nexml
 from .vendor import read_mrbayes, read_mrbayeses, read_iqtree, read_raxml
 from .io import read, read_many, write, detect_format, register_format, unregister_format
 from .treeio import convert_format, convert_string
+from .phylogeny import build_tree, distance_matrix, neighbor_joining
 from .plot import (
     render, draw, plot, save, draw_tree, treeplot, TreePlotter, tree_coords, edge_segments,
     tree_theme, add_scalebar, facet_grid, grid_of_trees,
@@ -43,6 +44,9 @@ __all__ = [
     "detect_format",
     "convert_format",
     "convert_string",
+    "build_tree",
+    "distance_matrix",
+    "neighbor_joining",
     "read_newick",
     "read_newicks",
     "write_newick",
