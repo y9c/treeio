@@ -124,12 +124,15 @@ def _format_from_path(path: str) -> Optional[str]:
     return _extension_map().get(ext)
 
 
-def read(source: Union[str, Path], format: Optional[str] = None) -> Tree:
+def read(source: Union[str, Path, "Tree"], format: Optional[str] = None) -> Tree:
     """Read a tree from a file path or raw string.
 
     If ``source`` is an existing file path it is read from disc; otherwise the
     string is treated as the tree payload itself.  Returns the first tree.
+    Passing an already-parsed :class:`Tree` is a no-op (returns it unchanged).
     """
+    if isinstance(source, Tree):
+        return source
     payload = _read_payload(source)
     fmt = format or _format_from_path(str(source)) or detect_format(payload)
     trees = _read_trees(payload, fmt)
@@ -138,8 +141,13 @@ def read(source: Union[str, Path], format: Optional[str] = None) -> Tree:
     return trees[0]
 
 
-def read_many(source: Union[str, Path], format: Optional[str] = None) -> List[Tree]:
-    """Read every tree found in ``source`` (file path or raw string)."""
+def read_many(source: Union[str, Path, "Tree"], format: Optional[str] = None) -> List[Tree]:
+    """Read every tree found in ``source`` (file path or raw string).
+
+    Passing a single :class:`Tree`` returns ``[tree]``.
+    """
+    if isinstance(source, Tree):
+        return [source]
     payload = _read_payload(source)
     fmt = format or _format_from_path(str(source)) or detect_format(payload)
     return _read_trees(payload, fmt)

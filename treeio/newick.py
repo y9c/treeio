@@ -120,6 +120,8 @@ class _NewickParser:
         # BEAST-style tree-level markers ([&R], [&U], ...) precede the root
         # node and belong to the tree, not to a node.
         leading = self._consume_leading_annotations()
+        if self.i >= self.n:
+            raise ValueError("empty newick string")
         tree = self._subtree()
         for ann in leading:
             for key, value in ann.items():
@@ -127,6 +129,12 @@ class _NewickParser:
         self._skip()
         if self._peek() == ";":
             self.i += 1
+        # A bare ';', '()' or a lone empty leaf is a fabricated (empty) tree;
+        # reject it rather than silently returning a one-tip junk tree.  A real
+        # tree always has at least one leaf carrying an actual name or length.
+        leaves = tree.get_tips()
+        if not leaves or all((not l.name or l.name == "unknown") and l.branch_length is None for l in leaves):
+            raise ValueError("no tree found in newick string")
         if tree.parent is not None:
             tree.isolated()
         return tree
@@ -376,10 +384,13 @@ def read_newick(nwk_string: str, annotations: bool = False) -> Tree:
 
 
 def read_newicks(nwk_string: str) -> List[Tree]:
-    """Read one or more newick trees (separated by ``;``) into a list."""
+    """Read one or more newick trees (separated by ``;``) into a list.
+
+    Leading whitespace and bracketed comments are skipped; trailing garbage is
+    ignored.  (NEXUS-structured input is not handled here -- use
+    :func:`treeio.read_nexus` for that.)
+    """
     trees: List[Tree] = []
-    rest = nwk_string
-    # pull tree-by-tree using a parser that stops after one top-level element
     idx = 0
     length = len(nwk_string)
     while True:

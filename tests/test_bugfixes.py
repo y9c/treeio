@@ -146,7 +146,65 @@ class TestBugFixes(unittest.TestCase):
         t = read_newick("(A[outer[inner]tail],B);")
         self.assertEqual(set(t.tip_names), {"A", "B"})
 
+    # -- third bug-hunt pass --
+    def test_read_tree_idempotent(self):
+        from treeio import read, read_many
+        t = read_newick("(A,B);")
+        self.assertIs(read(t), t)
+        self.assertEqual(read_many(t), [t])
 
+    def test_read_newick_rejects_empty(self):
+        for junk in ("", ";", "()", "(,);"):
+            with self.assertRaises(ValueError, msg=junk):
+                read_newick(junk)
 
-if __name__ == "__main__":
-    unittest.main()
+    def test_read_newick_accepts_named(self):
+        # legitimate trees (named leaves / lengths) still parse
+        self.assertEqual(read_newick("A;").tip_names, ["A"])
+        self.assertEqual(read_newick("((A,B)90,C);").tip_names, ["A", "B", "C"])
+        self.assertEqual(set(read_newick("(:1,:2);").tip_names), {"unknown"})
+
+    def test_read_newick_large_string_no_oserror(self):
+        # a big raw newick string must parse without a filesystem stat raising
+        # OSError (regression for _read_payload treating strings as paths).
+        big = "(" + ",".join(f"t{i}" for i in range(200)) + ");"
+        self.assertEqual(len(read_newick(big).get_tips()), 200)
+
+    def test_roundrect_distinct_from_rectangular(self):
+        # the roundrect layout must produce rounded (multi-point) edges, not the
+        # 3-point L path of rectangular.
+        t = read_newick("((A:1,B:2):0.5,C:3);")
+        from treeio.plot import edge_segments
+        rr = edge_segments(t, layout="roundrect")
+        rc = edge_segments(t, layout="rectangular")
+        self.assertTrue(all(len(s) >= 4 for s in rr))
+        self.assertTrue(all(len(s) == 3 for s in rc))
+
+    def test_layouts_raise_on_unknown(self):
+        from treeio import tree_coords
+        t = read_newick("(A,B);")
+        with self.assertRaises(ValueError):
+            tree_coords(t, layout="definitely_not_a_layout")
+
+    def test_new_polar_layouts_implemented(self):
+        from treeio import tree_coords
+        t = read_newick("((A:1,B:2):0.5,C:3);")
+        rect = tree_coords(t, layout="rectangular")
+        for lay in ("ellipse", "equal_angle", "daylight"):
+            c = tree_coords(t, layout=lay)
+            self.assertFalse(all(c[n] == rect[n] for n in c),
+                             msg=f"{lay} degraded to rectangular")
+
+    def test_gheatmap_circular_rings_stack(self):
+        from treeio import Tree, attach, gheatmap, draw_tree
+        import random
+        random.seed(1)
+        t = read_newick("(" + ",".join(f"t{i}:1" for i in range(8)) + ");")
+        for c in ("a", "b", "c"):
+            attach(t, {tip.name: i for i, tip in enumerate(t.get_tips())}, key=c)
+        fig, ax = plt.subplots()
+        draw_tree(t, ax=ax, layout="circular", tip_labels=False, tip_points=False)
+        gheatmap(t, ["a", "b", "c"], ax=ax, layout="circular", cmap="magma")
+        radii = {round(p.r, 3) for p in ax.patches if p.__class__.__name__ == "Wedge"}
+        plt.close(fig)
+        self.assertGreaterEqual(len(radii), 3, msg="rings must stack at distinct radii")
