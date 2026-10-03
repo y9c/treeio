@@ -10,7 +10,7 @@ plotting uses matplotlib (imported lazily on first draw).
 
 __author__ = "Ye Chang"
 __email__ = "yech1990@gmail.com"
-__version__ = "0.0.0.dev9"
+__version__ = "0.0.0.dev10"
 
 from .tree import Tree, fortify
 from .newick import read_newick, read_newicks, write_newick
