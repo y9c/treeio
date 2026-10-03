@@ -189,6 +189,19 @@ def make_radial():
     plt.close(fig)
 
 
+def make_symbols():
+    """Categorical per-tip symbol tree + legend (CG/GB/TC/TG/Tr/Tw)."""
+    t = build(60)
+    cats = ["CG", "GB", "TC", "TG", "Tr", "Tw"]
+    attach(t, {tip.name: random.choice(cats) for tip in t.get_tips()}, key="stat")
+    fig, ax = plt.subplots(figsize=(12, 8))
+    draw_tree(t, ax=ax, layout="rectangular", tip_labels=True, tip_points=True,
+              tip_color_field="stat", show_tip_legend=True)
+    ax.set_axis_off()
+    fig.savefig(OUT / "08_symbols.png", dpi=120, bbox_inches="tight")
+    plt.close(fig)
+
+
 def make_boxed():
     """Collapsed-clade boxed tree (green clade boxes + blue N + rotated Y)."""
     from treeio import box_label, add_boxed_labels
@@ -241,4 +254,5 @@ if __name__ == "__main__":
     make_heatmap()
     make_radial()
     make_boxed()
+    make_symbols()
     print(f"wrote gallery to {OUT}")
