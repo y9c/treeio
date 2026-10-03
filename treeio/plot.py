@@ -74,7 +74,10 @@ _LAYOUT_REGISTRY: dict = {}
 
 
 _BUILTIN_BACKENDS = {"mpl", "matplotlib", "ascii", "text", "cli"}
-_BUILTIN_LAYOUTS = {"rectangular", "roundrect", "circular", "fan", "radial", "slanted", "unrooted", "time"}
+_BUILTIN_LAYOUTS = {"rectangular", "roundrect", "slanted", "ellipse", "circular", "fan",
+                  "radial", "unrooted", "equal_angle", "daylight", "time"}
+_POLAR_LAYOUTS = frozenset({"circular", "fan", "radial", "unrooted", "equal_angle",
+                            "daylight", "ellipse"})
 
 
 def register_backend(name: str, func):
@@ -121,12 +124,41 @@ def layouts():
 # ----------------------------------------------------------------------- --
 # geometry (data coordinates, independent of canvas)
 # ----------------------------------------------------------------------- --
-def tree_coords(tree: Tree, layout: str = "rectangular", reverse_x: bool = False) -> Dict[Tree, Tuple[float, float]]:
-    """Return ``{node: (x, y)}`` in data coordinates for ``layout``."""
+def tree_coords(tree: Tree, layout: str = "rectangular", reverse_x: bool = False,
+                use_branch_length: bool = None) -> Dict[Tree, Tuple[float, float]]:
+    """Return ``{node: (x, y)}`` in data coordinates for ``layout``.
+
+    Supported layouts: ``rectangular``, ``roundrect``, ``slanted``, ``ellipse``,
+    ``circular``, ``fan``, ``radial``, ``unrooted``, ``equal_angle``,
+    ``daylight`` and ``time``.  Unrecognised layouts raise ``ValueError`` (they
+    are never silently drawn as a rectangular tree).
+    """
     if layout in _LAYOUT_REGISTRY:
         return dict(_LAYOUT_REGISTRY[layout](tree))
+    if layout == "equal_angle":
+        return _equal_angle_coords(tree, reverse_x=reverse_x)
+    if layout == "daylight":
+        return _daylight_coords(tree, reverse_x=reverse_x)
+    if layout == "ellipse":
+        use_depth = False
+        coords = _rect_coords(tree, reverse_x=reverse_x, use_depth=use_depth,
+                              use_branch_length=use_branch_length)
+        return _polarize(coords, tree, "ellipse")
+    if layout not in _BUILTIN_LAYOUTS:
+        raise ValueError(f"unknown tree layout {layout!r}")
     use_depth = layout == "radial"
-    xpos = _x_positions(tree, reverse_x=reverse_x, use_depth=use_depth)
+    coords = _rect_coords(tree, reverse_x=reverse_x, use_depth=use_depth,
+                          use_branch_length=use_branch_length)
+    if layout in ("circular", "fan", "radial", "unrooted"):
+        return _polarize(coords, tree, layout)
+    return coords
+
+
+def _rect_coords(tree: Tree, reverse_x: bool, use_depth: bool,
+                 use_branch_length: bool = None) -> Dict[Tree, Tuple[float, float]]:
+    """Rectangular (x = branch length / depth, y = tip order) node coordinates."""
+    xpos = _x_positions(tree, reverse_x=reverse_x, use_depth=use_depth,
+                        use_branch_length=use_branch_length)
     tips = tree.get_tips()
     tipy = {tip: float(i) for i, tip in enumerate(tips)}
     coords: Dict[Tree, Tuple[float, float]] = {}
@@ -136,12 +168,11 @@ def tree_coords(tree: Tree, layout: str = "rectangular", reverse_x: bool = False
         else:
             y = sum(coords[c][1] for c in node.children) / len(node.children)
         coords[node] = (xpos[node], y)
-    if layout in ("circular", "fan", "radial", "unrooted"):
-        return _polarize(coords, tree, layout)
     return coords
 
 
-def _x_positions(tree: Tree, reverse_x: bool, use_depth: bool) -> Dict[Tree, float]:
+def _x_positions(tree: Tree, reverse_x: bool, use_depth: bool,
+                 use_branch_length: bool = None) -> Dict[Tree, float]:
     if use_depth:
         def depth(node):
             d = 0
@@ -152,7 +183,10 @@ def _x_positions(tree: Tree, reverse_x: bool, use_depth: bool) -> Dict[Tree, flo
             return float(d)
         out = {n: depth(n) for n in tree.traverse("preorder")}
     else:
-        has_len = any(t.branch_length for t in tree.traverse("preorder") if t.branch_length)
+        # ``use_branch_length``: None -> auto (has_len), True -> force, False -> depth
+        if use_branch_length is None:
+            use_branch_length = any(t.branch_length for t in tree.traverse("preorder") if t.branch_length)
+        has_len = use_branch_length
         if has_len:
             out = {}
             stack = [(tree, 0.0)]
@@ -189,11 +223,112 @@ def _polarize(coords: Dict[Tree, Tuple[float, float]], tree: Tree, layout: str):
             theta = start + (y / n) * sweep
             out[node] = (r * math.cos(theta), r * math.sin(theta))
         return out
+    if layout == "ellipse":
+        # elliptical phylogram: same polar mapping as circular but the radius is
+        # spread over the full x-range so the crown is left open, like ggtree's
+        # ``ellipse`` layout (phylogenetic branches on an elliptical outline).
+        for node, (x, y) in coords.items():
+            r = x / xmax
+            theta = (y / n) * 2 * math.pi - math.pi / 2
+            out[node] = (r * math.cos(theta), r * math.sin(theta))
+        return out
     for node, (x, y) in coords.items():
         r = x / xmax
         theta = ((y / n) * 2 * math.pi - math.pi / 2) if layout != "unrooted" else ((y / n) * 2 * math.pi)
         out[node] = (r * math.cos(theta), r * math.sin(theta))
     return out
+
+
+def _equal_angle_coords(tree: Tree, reverse_x: bool = False) -> Dict[Tree, Tuple[float, float]]:
+    """Equal-angle unrooted layout (Meacham / PHYLIP / PAUP*).
+
+    Each subtree is allocated an angular arc proportional to its number of tips;
+    the root is at the centre (angle 0, radius 0) and the tips spread around a
+    full circle.  Radius is the (unit-normalised) cumulative branch length.
+    """
+    xmax = max((_x_for(tree, n) for n in tree.traverse("preorder")), default=1.0) or 1.0
+    ang: Dict[Tree, float] = {}
+
+    def assign(node: Tree, theta0: float, theta1: float) -> None:
+        ang[node] = (theta0 + theta1) / 2.0
+        if node.is_leaf():
+            return
+        kids = node.children
+        width = theta1 - theta0
+        # arc width proportional to each child's tip count
+        total = sum(len(c.get_tips()) for c in kids) or 1
+        cursor = theta0
+        for c in kids:
+            frac = len(c.get_tips()) / total
+            assign(c, cursor, cursor + width * frac)
+            cursor += width * frac
+
+    assign(tree, 0.0, 2 * math.pi)
+    out = {}
+    for node in tree.traverse("preorder"):
+        r = _x_for(tree, node) / xmax
+        th = ang[node]
+        out[node] = (r * math.cos(th), r * math.sin(th))
+    return out
+
+
+def _x_for(tree: Tree, node: Tree) -> float:
+    """Cumulative branch length from the root to ``node`` (0 when none)."""
+    d = 0.0
+    cur = node
+    while cur is not None and cur.parent is not None:
+        d += cur.branch_length if cur.branch_length is not None else 0.0
+        cur = cur.parent
+    return d
+
+
+def _daylight_coords(tree: Tree, reverse_x: bool = False) -> Dict[Tree, Tuple[float, float]]:
+    """Daylight unrooted layout (PAUP*).
+
+    Start from the equal-angle layout and iteratively re-balance every interior
+    node: each node's child subtrees are swung as rigid bodies around the node
+    so that the tips are distributed more evenly (the classic daylight
+    improvement).  Edges stay connected because a whole subtree is rotated by
+    the same angle about their common ancestor.
+    """
+    coords = _equal_angle_coords(tree, reverse_x=reverse_x)
+
+    def angle(n):
+        a = math.atan2(coords[n][1], coords[n][0])
+        return a
+
+    def set_angle(n, a):
+        r = math.hypot(coords[n][0], coords[n][1])
+        coords[n] = (r * math.cos(a), r * math.sin(a))
+
+    def rotate(n, delta):
+        # rotate the whole subtree rooted at ``n`` about the origin by ``delta``
+        for x in n.traverse("preorder"):
+            a = angle(x)
+            set_angle(x, a + delta)
+
+    for _ in range(3):
+        for node in tree.traverse("preorder"):
+            kids = list(node.children)
+            if len(kids) < 2:
+                continue
+            # angles (sorted) of the children; find the biggest gap between them
+            child_ang = sorted((angle(k) for k in kids))
+            gaps = [(child_ang[(i + 1) % len(child_ang)] - child_ang[i]) % (2 * math.pi)
+                    for i in range(len(child_ang))]
+            gi = gaps.index(max(gaps))
+            start = child_ang[(gi + 1) % len(child_ang)]
+            even = (2 * math.pi) / len(kids)
+            # place each child (and its subtree) evenly, in angular order
+            ordered = sorted(kids, key=lambda k: angle(k) % (2 * math.pi))
+            for j, k in enumerate(sorted(kids, key=lambda k: angle(k) % (2 * math.pi))):
+                target = (start + j * even) % (2 * math.pi)
+                cur = angle(k) % (2 * math.pi)
+                delta = (target - cur) % (2 * math.pi)
+                if delta > math.pi:
+                    delta -= 2 * math.pi
+                rotate(k, delta)
+    return coords
 
 
 def edge_segments(tree: Tree, coords=None, layout: str = "rectangular") -> List[List[Tuple[float, float]]]:
@@ -209,7 +344,7 @@ def edge_segments(tree: Tree, coords=None, layout: str = "rectangular") -> List[
     """
     if coords is None:
         coords = tree_coords(tree, layout)
-    straight = layout in ("circular", "fan", "radial", "unrooted", "slanted") or layout in _LAYOUT_REGISTRY
+    straight = layout in _POLAR_LAYOUTS or layout == "slanted" or layout in _LAYOUT_REGISTRY
     segs = []
     for node in tree.traverse("preorder"):
         if node.parent is None:
@@ -275,7 +410,7 @@ def _figsize(tree: Tree, layout: str):
 
 def _new_axes(tree: Tree, layout: str, reverse_x: bool = False, ax=None, **kw):
     plt = _mpl()
-    polar = layout in ("circular", "fan", "radial", "unrooted")
+    polar = layout in _POLAR_LAYOUTS
     if ax is None:
         w, h = _figsize(tree, layout)
         figsize = kw.pop("figsize", (w / 80.0, h / 80.0))
@@ -307,10 +442,12 @@ def draw_tree(
     tick_size: int = 8,
     reverse_x: bool = False,
     branch_color_field: str = None,
+    branch_palette: Optional[Dict[str, str]] = None,
     cmap: str = "viridis",
     theme: str = "clean",
     show_colorbar: bool = False,
     colorbar_label: str = "value",
+    use_branch_length: bool = None,
     **kwargs,
 ):
     """Draw ``tree`` onto ``ax`` (creating one if ``ax`` is None) and return it.
@@ -326,13 +463,17 @@ def draw_tree(
     """
     plt = _mpl()
     from matplotlib.collections import LineCollection
-    polar = layout in ("circular", "fan", "radial", "unrooted")
+    polar = layout in _POLAR_LAYOUTS
     if ax is None:
         figsize = kwargs.pop("figsize", None)
         w, h = _figsize(tree, layout)
         ax = plt.subplots(figsize=figsize or (w / 80.0, h / 80.0),
                           subplot_kw={"aspect": "equal"} if polar else None)[1]
-    coords = tree_coords(tree, layout=layout, reverse_x=reverse_x)
+    # ``use_branch_length=False`` draws a cladogram (branch.length='none'), which
+    # also fixes the "collapsed core" circular artifact seen on skewed trees by
+    # spacing tips evenly instead of scaling radius by a single longest path.
+    coords = tree_coords(tree, layout=layout, reverse_x=reverse_x,
+                         use_branch_length=use_branch_length)
     segments = edge_segments(tree, coords, layout=layout)
 
     mappable = None
@@ -358,10 +499,9 @@ def draw_tree(
                 mappable = lc
         else:
             # categorical branch colouring (discrete classes drawn as solid segs)
-            import matplotlib.collections as mc
             alls = [str(v) for v in vals if v is not None]
             cats = sorted(set(alls), key=str)
-            pal = named_palette(cats)
+            pal = branch_palette or named_palette(cats)
             colors = [pal.get(str(v), edge_color) if v is not None else edge_color for v in vals]
             lc = LineCollection(segments, colors=colors, linewidths=edge_width,
                                 capstyle="round", antialiaseds=True, zorder=1)
@@ -780,11 +920,11 @@ def gheatmap(tree, columns, ax=None, layout="rectangular", cmap="viridis",
         colfunc = lambda v: pal[str(v)]
 
     if layout in ("circular", "fan", "radial", "unrooted"):
-        # concentric rings
+        # concentric rings -- each column is drawn at a progressively larger radius
         base_outer = max(math.hypot(*coords[t]) for t in tips) or 1.0
-        outer = getattr(ax, "_treeio_ring_r", base_outer + 0.12)
         w = cell_width / 8.0
         for vals in allvals:
+            outer = getattr(ax, "_treeio_ring_r", base_outer + 0.12)
             for i, tip in enumerate(tips):
                 v = vals.get(tip.name)
                 if v is None:
@@ -874,7 +1014,7 @@ class TreePlotter:
         """Write tip labels; radial layouts rotate them (collision avoidance).
 
         ``aes`` colours the labels by a per-tip field."""
-        polar = self.layout in ("circular", "fan", "radial", "unrooted")
+        polar = self.layout in _POLAR_LAYOUTS
         c, _, _ = _tip_colors_for(self.tree, self.tree.get_tips(), None, aes, "viridis", self.edge_color)
         out = []
         for i, tip in enumerate(self.tree.get_tips()):
