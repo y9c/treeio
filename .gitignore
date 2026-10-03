@@ -105,3 +105,6 @@ ENV/
 upload.sh
 # pdoc3
 pdoc/
+
+# generated gallery examples
+/examples/gallery/

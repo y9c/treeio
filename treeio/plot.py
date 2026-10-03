@@ -55,6 +55,12 @@ __all__ = [
     "add_scalebar",
     "facet_grid",
     "grid_of_trees",
+    "highlight_clade",
+    "add_ring",
+    "add_rings",
+    "gheatmap",
+    "box_label",
+    "add_boxed_labels",
     "register_backend",
     "register_layout",
     "unregister_backend",
@@ -195,7 +201,12 @@ def edge_segments(tree: Tree, coords=None, layout: str = "rectangular") -> List[
     if coords is None:
         coords = tree_coords(tree, layout)
 def edge_segments(tree: Tree, coords=None, layout: str = "rectangular") -> List[List[Tuple[float, float]]]:
-    """Return a list of polylines (each a list of points) for every edge."""
+    """Return a list of polylines (each a list of points) for every edge.
+
+    ``roundrect`` renders L-shaped phylogram edges but with rounded corners at
+    each elbow, matching the ``ggtree`` layout of the same name.  ``circular`` /
+    ``fan`` / ``radial`` / ``unrooted`` / ``slanted`` draw straight edges.
+    """
     if coords is None:
         coords = tree_coords(tree, layout)
     straight = layout in ("circular", "fan", "radial", "unrooted", "slanted") or layout in _LAYOUT_REGISTRY
@@ -207,9 +218,47 @@ def edge_segments(tree: Tree, coords=None, layout: str = "rectangular") -> List[
         xc, yc = coords[node]
         if straight:
             segs.append([(xp, yp), (xc, yc)])
+        elif layout == "roundrect":
+            segs.append(_rounded_lpath(xp, yp, xc, yc))
         else:
             segs.append([(xp, yp), (xp, yc), (xc, yc)])
     return segs
+
+
+def _rounded_lpath(xp: float, yp: float, xc: float, yc: float,
+                   radius: float = None, n: int = 6) -> List[Tuple[float, float]]:
+    """An L-shaped edge ``(xp,yp)->(xp,yc)->(xc,yc)`` with a rounded elbow.
+
+    The corner at ``(xp, yc)`` is replaced by a quarter arc of the given
+    ``radius`` (default: 40% of the shorter leg, clamped), drawn with ``n``
+    points.  Used by the ``roundrect`` layout.
+    """
+    dx = xc - xp
+    dy = yc - yp
+    # default radius: fraction of the shorter leg (so the arc never flips)
+    if radius is None:
+        radius = 0.4 * min(abs(dx), abs(dy))
+    r = min(radius, abs(dx) * 0.5, abs(dy) * 0.5)
+    if r <= 1e-12:
+        # degenerate (zero-length leg): plain L-shape
+        return [(xp, yp), (xp, yc), (xc, yc)]
+    sx = -1.0 if dx < 0 else 1.0
+    sy = -1.0 if dy < 0 else 1.0
+    pts = [(xp, yp)]
+    # approach point on the vertical leg, ending r short of the corner
+    pts.append((xp, yc - sy * r))
+    # quarter arc centred at (xp + sx*r, yc - sy*r)
+    import math
+    cx, cy = xp + sx * r, yc - sy * r
+    for i in range(1, n + 1):
+        t = (i / n) * (math.pi / 2)
+        # param so that t=0 -> (xp, yc - sy*r) and t=pi/2 -> (xp + sx*r, yc)
+        px = cx - sx * r * math.cos(t)
+        py = cy + sy * r * math.sin(t)
+        pts.append((px, py))
+    pts.append((xp + sx * r, yc))
+    pts.append((xc, yc))
+    return pts
 
 
 def _mpl():
@@ -287,26 +336,46 @@ def draw_tree(
     segments = edge_segments(tree, coords, layout=layout)
 
     mappable = None
+    branch_legend = None
     if branch_color_field is not None:
         import numpy as np
         import matplotlib
-        vals = [c.get_data(branch_color_field) for c in tree.traverse("preorder") if c.parent is not None]
-        arr = np.asarray([np.nan if v is None else float(v) for v in vals], dtype=float)
-        if np.all(np.isnan(arr)):
-            lc = LineCollection(segments, colors=edge_color, linewidths=edge_width,
-                                capstyle="round", antialiaseds=True, zorder=1)
+        childs = [c for c in tree.traverse("preorder") if c.parent is not None]
+        vals = [c.get_data(branch_color_field) for c in childs]
+        numeric = vals and all(v is not None and isinstance(v, (int, float, np.number)) for v in vals)
+        if vals and numeric:
+            arr = np.asarray([np.nan if v is None else float(v) for v in vals], dtype=float)
+            if np.all(np.isnan(arr)):
+                lc = LineCollection(segments, colors=edge_color, linewidths=edge_width,
+                                    capstyle="round", antialiaseds=True, zorder=1)
+            else:
+                lo = float(np.nanmin(arr)); hi = float(np.nanmax(arr))
+                if not np.isfinite(lo) or lo == hi:
+                    lo, hi = 0.0, 1.0
+                norm = matplotlib.colors.Normalize(vmin=lo, vmax=hi)
+                lc = LineCollection(segments, array=arr, cmap=matplotlib.colormaps.get_cmap(cmap),
+                                    norm=norm, linewidths=edge_width, capstyle="round", zorder=1)
+                mappable = lc
         else:
-            lo = float(np.nanmin(arr)); hi = float(np.nanmax(arr))
-            if not np.isfinite(lo) or lo == hi:
-                lo, hi = 0.0, 1.0
-            norm = matplotlib.colors.Normalize(vmin=lo, vmax=hi)
-            lc = LineCollection(segments, array=arr, cmap=matplotlib.colormaps.get_cmap(cmap),
-                                norm=norm, linewidths=edge_width, capstyle="round", zorder=1)
-            mappable = lc
+            # categorical branch colouring (discrete classes drawn as solid segs)
+            import matplotlib.collections as mc
+            alls = [str(v) for v in vals if v is not None]
+            cats = sorted(set(alls), key=str)
+            pal = named_palette(cats)
+            colors = [pal.get(str(v), edge_color) if v is not None else edge_color for v in vals]
+            lc = LineCollection(segments, colors=colors, linewidths=edge_width,
+                                capstyle="round", antialiaseds=True, zorder=1)
+            import matplotlib.patches as mpatches
+            branch_legend = [(c, pal[str(c)]) for c in cats]
     else:
         lc = LineCollection(segments, colors=edge_color, linewidths=edge_width,
                             capstyle="round", antialiaseds=True, zorder=1)
     ax.add_collection(lc)
+    if branch_legend and show_tip_legend:
+        import matplotlib.patches as mpatches
+        handles = [mpatches.Patch(color=c, label=str(k)) for k, c in branch_legend]
+        ax.legend(handles=handles, title=branch_color_field, fontsize=8, title_fontsize=9,
+                  loc="center left", bbox_to_anchor=(1.02, 0.5))
 
     tips = tree.get_tips()
     tip_x = [coords[t][0] for t in tips]
@@ -416,6 +485,347 @@ def _write_tip_label(ax, x, y, text, polar, color, size, offset=0.04):
         return ax.text(lx, ly, text, rotation=rot, rotation_mode="anchor", ha=ha, va="center",
                        fontsize=size, color=color, zorder=4)
     return ax.text(x, y, text, fontsize=size, color=color, va="center", ha="left", zorder=4)
+
+
+def box_label(ax, x, y, text, fill="#a7d7a7", textcolor="#1a1a1a", fontsize=9,
+              boxstyle="round,pad=0.35", edgecolor="#333333", edge_width=0.8,
+              round=True, ha="center", va="center", rotation=0, zorder=5):
+    """Draw text inside a coloured, rounded box at ``(x, y)`` (data coords).
+
+    This is the ``ggtree`` collapsed-clade box label.  The box is rendered by
+    matplotlib's native text ``bbox`` so it is exactly sized to the text (and
+    scales correctly for any axis): ``round=True`` draws a rounded rectangle,
+    ``round=False`` a square one.  Returns the text object.
+    """
+    style = boxstyle if round else "square,pad=0.35"
+    return ax.text(x, y, text, fontsize=fontsize, color=textcolor, ha=ha, va=va,
+                   rotation=rotation, zorder=zorder,
+                   bbox=dict(boxstyle=style, facecolor=fill, edgecolor=edgecolor,
+                             linewidth=edge_width))
+
+
+def add_boxed_labels(tree, labels, ax=None, layout="rectangular", fill="#a7d7a7",
+                     fontsize=9, round=True, coords=None, **kwargs):
+    """Draw boxed labels at named nodes/clades (``ggtree`` clade-box labels).
+
+    ``labels`` is a ``{node_or_name: text}`` mapping (or ``{node_or_name:
+    (text, fill)}``).  Each target node is located by name (tip or internal) or
+    by a :class:`Tree` node and a coloured rounded box with ``text`` is drawn at
+    its coordinates.  Returns the axes.
+    """
+    if ax is None:
+        import matplotlib.pyplot as plt
+        ax = plt.gca()
+    if coords is None:
+        coords = tree_coords(tree, layout=layout)
+    for target, spec in labels.items():
+        node = target if isinstance(target, Tree) else \
+            (tree.get_node_by_label(str(target)) or tree.get_tip_by_label(str(target)))
+        if node is None:
+            continue
+        if isinstance(spec, (tuple, list)):
+            text, f = spec
+        else:
+            text, f = spec, fill
+        x, y = coords[node]
+        box_label(ax, x, y, str(text), fill=f, fontsize=fontsize, round=round, **kwargs)
+    return ax
+
+
+# ----------------------------------------------------------------------- --
+# clade highlight boxes (ggtree geom_hilight analogue)
+# ----------------------------------------------------------------------- --
+def _clade_bounds(tree, coords, clade, layout):
+    """Data bounds covering ``clade``'s tips.
+
+    Rectangular layouts return ``(x0, x1, y0, y1)``; the polar layouts return
+    ``(r0, r1, theta0, theta1)`` in degrees (the shortest arc enclosing the
+    clade's tips, handling wrap-around).
+    """
+    import math
+    tips = clade.get_tips()
+    if not tips:
+        return None
+    if layout in ("circular", "fan", "radial", "unrooted"):
+        r0 = min(math.hypot(*coords[t]) for t in tips)
+        r1 = max(math.hypot(*coords[t]) for t in tips)
+        angles = sorted(math.degrees(math.atan2(coords[t][1], coords[t][0])) % 360.0
+                        for t in tips)
+        gaps = [angles[i + 1] - angles[i] for i in range(len(angles) - 1)]
+        gaps.append(360.0 - (angles[-1] - angles[0]))
+        gi = gaps.index(max(gaps))
+        a0 = angles[(gi + 1) % len(angles)]
+        a1 = angles[gi]
+        if a1 < a0:
+            a1 += 360.0
+        return (r0, r1, a0, a1)
+    # rectangular: the box starts at the clade's split node (x of the clade
+    # itself), not at the root, matching ggtree geom_hilight.
+    x0 = coords[clade][0]
+    x1 = max(coords[t][0] for t in tips)
+    y0 = min(coords[t][1] for t in tips)
+    y1 = max(coords[t][1] for t in tips)
+    return (x0, x1, y0, y1)
+
+
+def highlight_clade(tree, clade, ax=None, layout="rectangular", fill="#2e8b57",
+                    alpha=0.35, edgecolor="none", lw=0, zorder=0.6, pad=0.45,
+                    coords=None, extend_center=False, **kwargs):
+    """Shade the region behind a clade (``geom_hilight`` analogue).
+
+    ``clade`` may be a :class:`Tree` node, a node name, or an iterable of tip
+    names (their MRCA).  Rectangular layouts draw a filled rectangle covering
+    the clade tips; polar layouts draw an annular wedge.  Returns the patch.
+    """
+    import matplotlib.patches as mpatches
+    import matplotlib.pyplot as plt
+    if ax is None:
+        ax = plt.gca()
+    if isinstance(clade, str):
+        clade = tree.get_node_by_label(clade) or tree.get_tip_by_label(clade)
+    elif isinstance(clade, (list, tuple, set)):
+        clade = tree.get_mrca(*list(clade))
+    if clade is None:
+        raise ValueError("clade not found in tree")
+    if coords is None:
+        coords = tree_coords(tree, layout=layout)
+    b = _clade_bounds(tree, coords, clade, layout)
+    if b is None:
+        return None
+    if layout in ("circular", "fan", "radial", "unrooted"):
+        r0, r1, a0, a1 = b
+        if r1 <= r0:
+            r1 = r0 + 1e-3
+        if extend_center:
+            # full-sector wedge from the origin out to the clade's tip radius
+            patch = mpatches.Wedge((0, 0), r1, a0, a1, facecolor=fill, alpha=alpha,
+                                   edgecolor=edgecolor, linewidth=lw, zorder=zorder, **kwargs)
+        else:
+            patch = mpatches.Wedge((0, 0), r1, a0, a1, width=r1 - r0,
+                                   facecolor=fill, alpha=alpha, edgecolor=edgecolor,
+                                   linewidth=lw, zorder=zorder, **kwargs)
+    else:
+        x0, x1, y0, y1 = b
+        # box starts at the clade's split node (x0), extends past its tips
+        left = x0
+        right = x1 + 0.02 * max(abs(x1), 1.0)
+        patch = mpatches.Rectangle((left, y0 - pad), right - left, (y1 - y0) + 2 * pad,
+                                   facecolor=fill, alpha=alpha, edgecolor=edgecolor,
+                                   linewidth=lw, zorder=zorder, **kwargs)
+    ax.add_patch(patch)
+    return patch
+
+
+# ----------------------------------------------------------------------- --
+# concentric tip-data rings around a tree (ggtree ring / annoRing analogue)
+# ----------------------------------------------------------------------- --
+def _tip_angles(tree, i, n, layout):
+    """Angular extent (degrees) of tip index ``i`` in layout ``layout``."""
+    if layout == "fan":
+        sweep = 180.0
+        start = 90.0 - sweep / 2
+        return start + (i / n) * sweep, start + ((i + 1) / n) * sweep
+    a0 = (i / n) * 360.0 - 90.0
+    a1 = ((i + 1) / n) * 360.0 - 90.0
+    return a0, a1
+
+
+def add_ring(tree, field, ax=None, layout="circular", cmap="viridis",
+             discrete=False, ring_width=0.06, start=0.12, pad=0.02,
+             colorbar=False, colorbar_label=None, palette=None, norm=None,
+             zorder=1.0, coords=None, **kwargs):
+    """Draw one concentric ring of per-tip ``field`` values around a tree.
+
+    The ring is an annulus centred on the origin whose segments are coloured by
+    each tip's ``field`` value.  Continuous values map through ``cmap`` (add a
+    colourbar with ``colorbar=True``); categorical values use a discrete palette.
+
+    Rings are stacked outward: the first ring starts at the tree's outer tip
+    radius (``start`` gap beyond it), and each subsequent ring is drawn farther
+    out.  Returns ``(mappable_or_None, legend_handles)``.
+    """
+    import numpy as np
+    import matplotlib
+    from matplotlib.patches import Wedge
+    if ax is None:
+        import matplotlib.pyplot as plt
+        ax = plt.gca()
+    if coords is None:
+        coords = tree_coords(tree, layout=layout)
+    tips = tree.get_tips()
+    n = len(tips) or 1
+    values = {t.name: t.get_data(field) for t in tips}
+    known = {k: v for k, v in values.items() if v is not None}
+    if not known:
+        return None, []
+    base_outer = max(math.hypot(*coords[t]) for t in tips) or 1.0
+    outer = getattr(ax, "_treeio_ring_r", base_outer + start)
+    w = ring_width
+    numeric = all(isinstance(v, (int, float)) for v in known.values())
+    if numeric and not discrete:
+        arr = np.array([float(values[t.name]) if values[t.name] is not None else np.nan
+                        for t in tips])
+        lo = float(np.nanmin(arr)); hi = float(np.nanmax(arr))
+        if not np.isfinite(lo) or lo == hi:
+            lo, hi = 0.0, 1.0
+        if norm is None:
+            norm = matplotlib.colors.Normalize(vmin=lo, vmax=hi)
+        cmap_obj = matplotlib.colormaps.get_cmap(cmap)
+        colors = cmap_obj(norm(arr))
+        mappable = matplotlib.cm.ScalarMappable(norm=norm, cmap=cmap_obj)
+        for i, tip in enumerate(tips):
+            if values[tip.name] is None:
+                continue
+            a0, a1 = _tip_angles(tree, i, n, layout)
+            ax.add_patch(Wedge((0, 0), outer + w, a0, a1, width=w,
+                               facecolor=colors[i], edgecolor="none", zorder=zorder, **kwargs))
+        ax._treeio_ring_r = outer + w + pad
+        if colorbar:
+            cb = ax.figure.colorbar(mappable, ax=ax, fraction=0.03, pad=0.04)
+            cb.set_label(colorbar_label or field, fontsize=8)
+        return mappable, None
+    # discrete / categorical
+    cats = sorted(set(known.values()), key=str)
+    pal = palette or named_palette([str(c) for c in cats])
+    for i, tip in enumerate(tips):
+        if values[tip.name] is None:
+            continue
+        a0, a1 = _tip_angles(tree, i, n, layout)
+        ax.add_patch(Wedge((0, 0), outer + w, a0, a1, width=w,
+                           facecolor=pal[str(values[tip.name])], edgecolor="none",
+                           zorder=zorder, **kwargs))
+    ax._treeio_ring_r = outer + w + pad
+    import matplotlib.patches as mpatches
+    handles = [mpatches.Patch(color=c, label=str(k)) for k, c in pal.items()]
+    return None, handles
+
+
+def add_rings(tree, fields, ax=None, layout="circular", cmap="viridis",
+              ring_width=0.06, start=0.12, pad=0.02, **kwargs):
+    """Draw several concentric ``fields`` rings around a tree.
+
+    ``fields`` is a list of field names; the first is drawn innermost.
+    ``cmap`` may be a single name or a list matching ``fields``.  Returns ``ax``.
+    """
+    if isinstance(cmap, (list, tuple)):
+        assert len(cmap) == len(fields), "cmap list must match fields"
+        cmaps = list(cmap)
+    else:
+        cmaps = [cmap] * len(fields)
+    # reset the stacking anchor for each call
+    if hasattr(ax, "_treeio_ring_r"):
+        del ax._treeio_ring_r
+    for f, cm in zip(fields, cmaps):
+        add_ring(tree, f, ax=ax, layout=layout, cmap=cm,
+                 ring_width=ring_width, start=start, pad=pad, **kwargs)
+    return ax
+
+
+def gheatmap(tree, columns, ax=None, layout="rectangular", cmap="viridis",
+             discrete=False, cell_width=0.8, cell_gap=0.0, group_gap=0.4,
+             group_by=None, tip_labels=False, label_size=9, colorbar=False,
+             colorbar_label="value", palette=None, zorder=2.0,
+             coords=None, **kwargs):
+    """Draw a per-tip heatmap matrix beside a tree (``gheatmap`` analogue).
+
+    ``columns`` is a list of field names attached to tips; each is one column
+    (rectangular layout) or one concentric ring (circular layout).  In the
+    rectangular layout the tree is drawn first and the coloured matrix is placed
+    immediately to its right, one row per tip, with optional gaps between
+    ``group_by`` column groups.  Returns ``(ax, column_specs)`` where
+    ``column_specs`` holds each column's left edge (rectangular) so the caller
+    can draw column-axis labels.
+
+    Continuous values share a single ``cmap``/norm across all columns;
+    categorical values use a discrete palette (``discrete=True``).
+    """
+    import numpy as np
+    import matplotlib
+    from matplotlib.patches import Rectangle, Wedge
+    if ax is None:
+        import matplotlib.pyplot as plt
+        ax = plt.gca()
+    if coords is None:
+        coords = tree_coords(tree, layout=layout)
+    tips = tree.get_tips()
+    n = len(tips) or 1
+    # gather per-column values (aligned to tips; missing -> None)
+    allvals = []
+    numeric = True
+    cats = set()
+    for col in columns:
+        vals = {t.name: t.get_data(col) for t in tips}
+        allvals.append(vals)
+        known = [v for v in vals.values() if v is not None]
+        if not known:
+            continue
+        if not all(isinstance(v, (int, float, np.number)) for v in known):
+            numeric = False
+        cats.update(str(v) for v in known)
+    if numeric and not discrete:
+        # shared continuous colour scale
+        known = [float(v) for vals in allvals for v in vals.values() if v is not None]
+        lo = min(known) if known else 0.0
+        hi = max(known) if known else 1.0
+        if not np.isfinite(lo) or lo == hi:
+            lo, hi = 0.0, 1.0
+        norm = matplotlib.colors.Normalize(vmin=lo, vmax=hi)
+        cmap_obj = matplotlib.colormaps.get_cmap(cmap)
+        mappable = matplotlib.cm.ScalarMappable(norm=norm, cmap=cmap_obj)
+        colfunc = lambda v: cmap_obj(norm(float(v)))
+    else:
+        cats = sorted(cats, key=str)
+        pal = palette or named_palette(cats)
+        mappable = None
+        colfunc = lambda v: pal[str(v)]
+
+    if layout in ("circular", "fan", "radial", "unrooted"):
+        # concentric rings
+        base_outer = max(math.hypot(*coords[t]) for t in tips) or 1.0
+        outer = getattr(ax, "_treeio_ring_r", base_outer + 0.12)
+        w = cell_width / 8.0
+        for vals in allvals:
+            for i, tip in enumerate(tips):
+                v = vals.get(tip.name)
+                if v is None:
+                    continue
+                a0, a1 = _tip_angles(tree, i, n, layout)
+                ax.add_patch(Wedge((0, 0), outer + w, a0, a1, width=w,
+                                   facecolor=colfunc(v), edgecolor="none", zorder=zorder))
+            ax._treeio_ring_r = outer + w + 0.02
+        if colorbar and mappable is not None:
+            cb = ax.figure.colorbar(mappable, ax=ax, fraction=0.03, pad=0.04)
+            cb.set_label(colorbar_label, fontsize=8)
+        return ax, None
+
+    # rectangular: draw the matrix to the right of the tips
+    tip_y = [coords[t][1] for t in tips]
+    x0 = max(coords[t][0] for t in tips)
+    left = x0 + 0.05 * max(abs(x0), 1.0)
+    specs = []
+    available = len(columns)
+    for ci, vals in enumerate(allvals):
+        # group separator
+        if group_by and ci > 0:
+            if group_by[ci - 1] is not None:
+                left += group_gap
+        w = cell_width
+        specs.append({"left": left, "width": w, "field": columns[ci]})
+        for i, tip in enumerate(tips):
+            v = vals.get(tip.name)
+            if v is None:
+                continue
+            ax.add_patch(Rectangle((left, tip_y[i] - 0.4), w, 0.8,
+                                   facecolor=colfunc(v), edgecolor="none", zorder=zorder))
+        left += w + cell_gap
+    if tip_labels:
+        for i, tip in enumerate(tips):
+            ax.text(left + 0.6, tip_y[i], tip.name, fontsize=label_size, va="center", ha="left")
+    if colorbar and mappable is not None:
+        cb = ax.figure.colorbar(mappable, ax=ax, fraction=0.03, pad=0.04)
+        cb.set_label(colorbar_label, fontsize=8)
+    ax.set_xlim((-0.05 * max(abs(x0), 1.0), left + (cell_width if tip_labels else 0)))
+    return ax, specs
 
 
 # ----------------------------------------------------------------------- --

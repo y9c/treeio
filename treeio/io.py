@@ -146,10 +146,21 @@ def read_many(source: Union[str, Path], format: Optional[str] = None) -> List[Tr
 
 
 def _read_payload(source: Union[str, Path]) -> str:
+    s = str(source)
+    # Structured data (JSON / newick / ...) is never a path: return it verbatim
+    # before any filesystem stat, which would raise on over-long strings.
+    stripped = s.lstrip()
+    if stripped[:1] in ("{", "[", "(", "\""):
+        return s
+    if s.endswith((";", "};")):
+        return s
     p = Path(source)
-    if str(source) and p.exists() and p.is_file():
-        return p.read_text()
-    return str(source)
+    try:
+        if s and p.exists() and p.is_file():
+            return p.read_text()
+    except OSError:
+        return s
+    return s
 
 
 def _read_trees(payload: str, fmt: str) -> List[Tree]:

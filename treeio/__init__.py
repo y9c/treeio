@@ -10,7 +10,7 @@ plotting uses matplotlib (imported lazily on first draw).
 
 __author__ = "Ye Chang"
 __email__ = "yech1990@gmail.com"
-__version__ = "0.0.0.dev7"
+__version__ = "0.0.0.dev8"
 
 from .tree import Tree, fortify
 from .newick import read_newick, read_newicks, write_newick
@@ -27,6 +27,8 @@ from .phylogeny import build_tree, distance_matrix, neighbor_joining
 from .plot import (
     render, draw, plot, save, draw_tree, treeplot, TreePlotter, tree_coords, edge_segments,
     tree_theme, add_scalebar, facet_grid, grid_of_trees,
+    highlight_clade, add_ring, add_rings, gheatmap,
+    box_label, add_boxed_labels,
     register_backend, register_layout, unregister_backend, unregister_layout, layouts,
     color_by_value, color_map, named_palette, suggest_figsize,
 )
@@ -91,6 +93,12 @@ __all__ = [
     "add_scalebar",
     "facet_grid",
     "grid_of_trees",
+    "highlight_clade",
+    "add_ring",
+    "add_rings",
+    "gheatmap",
+    "box_label",
+    "add_boxed_labels",
     "register_format",
     "unregister_format",
     "register_backend",
