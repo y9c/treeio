@@ -1,9 +1,11 @@
 import unittest
-from treeio import (Tree, build_tree, distance_matrix, neighbor_joining)
+
+from treeio import Tree, build_tree, distance_matrix, neighbor_joining
 
 
 class _SeqRecord:
     """Duck-typed stand-in for a Biopython SeqRecord."""
+
     def __init__(self, sid, seq):
         self.id = sid
         self.seq = type("S", (), {"__str__": lambda self: seq})()
@@ -17,12 +19,15 @@ class TestPhylogeny(unittest.TestCase):
         self.assertAlmostEqual(D[0][2], 0.5)
         self.assertAlmostEqual(D[1][2], 0.25)
         self.assertAlmostEqual(D[0][0], 0.0)
-        self.assertTrue(all(abs(D[i][j] - D[j][i]) < 1e-9 for i in range(3) for j in range(3)))
+        self.assertTrue(
+            all(abs(D[i][j] - D[j][i]) < 1e-9 for i in range(3) for j in range(3))
+        )
 
     def test_distance_matrix_jc(self):
         _, D = distance_matrix({"A": "AAAA", "B": "AAAT"}, model="jc")
         # p = 0.25 -> jukes-cantor = -0.75 ln(1 - 4*0.25/3) = -0.75 ln(2/3)
         import math
+
         self.assertAlmostEqual(D[0][1], -0.75 * math.log(2.0 / 3.0), places=6)
 
     def test_build_tree_topology(self):

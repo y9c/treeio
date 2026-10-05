@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
 #
 # Copyright © 2020 Ye Chang <yech1990@gmail.com>
 # Distributed under terms of the MIT license.
@@ -25,15 +23,13 @@ from a CSV / DNAML), or a two-sequence mapping of names to values.
 
 from __future__ import annotations
 
-from typing import Dict, Iterable, List, Optional
-
 from .tree import Tree
 
 
 def attach(
     tree: Tree,
     data,
-    key: Optional[str] = None,
+    key: str | None = None,
     match: str = "name",
 ) -> Tree:
     """Attach external data to the nodes of ``tree``.
@@ -82,12 +78,12 @@ def attach(
     return tree
 
 
-def attach_to_tips(tree: Tree, data, key: str = None) -> Tree:
+def attach_to_tips(tree: Tree, data, key: str | None = None) -> Tree:
     """Attach data only to tip nodes (see :func:`attach`)."""
     return _attach_filtered(tree, data, key, terminal=True)
 
 
-def attach_to_nodes(tree: Tree, data, key: str = None) -> Tree:
+def attach_to_nodes(tree: Tree, data, key: str | None = None) -> Tree:
     """Attach data only to internal nodes (see :func:`attach`)."""
     return _attach_filtered(tree, data, key, terminal=False)
 
@@ -101,7 +97,6 @@ def _attach_filtered(tree: Tree, data, key, terminal):
             if node is not None and node.is_leaf() == terminal:
                 mapping[node] = value
     # apply via attach-like semantics on the filtered subset
-    from .tree import Tree
 
     for node, value in mapping.items():
         if isinstance(value, dict):
@@ -114,20 +109,20 @@ def _attach_filtered(tree: Tree, data, key, terminal):
     return tree
 
 
-def get_tipdata(tree: Tree, key: str, default=None) -> Dict[str, object]:
+def get_tipdata(tree: Tree, key: str, default=None) -> dict[str, object]:
     """Return ``{tip_name: value}`` for a tip-level annotation."""
     return tree.get_tipdata(key, default)
 
 
-def get_nodedata(tree: Tree, key: str, default=None) -> Dict[str, object]:
+def get_nodedata(tree: Tree, key: str, default=None) -> dict[str, object]:
     """Return ``{node_name: value}`` for an internal-node annotation."""
     return tree.get_nodedata(key, default)
 
 
 __all__ = [
     "attach",
-    "attach_to_tips",
     "attach_to_nodes",
-    "get_tipdata",
+    "attach_to_tips",
     "get_nodedata",
+    "get_tipdata",
 ]

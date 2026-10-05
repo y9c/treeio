@@ -1,25 +1,37 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-
 """Comprehensive tests for the core treeio engine, I/O and plotting."""
 
 import unittest
-import xml.etree.ElementTree as ET
+
 import matplotlib.pyplot as plt
 
 from treeio import (
-    Tree, read, read_many, write, detect_format,
-    read_newick, write_newick, read_nexus, write_nexus,
-    read_phyloxml, write_phyloxml, read_json, write_json,
-    draw, draw_tree, render, treeplot, save,
-    color_by_value, color_map, named_palette,
-    attach, get_tipdata, get_nodedata,
+    Tree,
+    attach,
+    color_by_value,
+    color_map,
+    detect_format,
+    draw,
+    draw_tree,
+    get_tipdata,
+    named_palette,
+    read,
+    read_json,
+    read_newick,
+    read_nexus,
+    read_phyloxml,
+    render,
+    treeplot,
+    write,
+    write_newick,
+    write_nexus,
+    write_phyloxml,
 )
 
-
-N = "((raccoon:19.19959,bear:6.80041):0.84600," \
-    "((sea_lion:11.99700,seal:12.00300):7.52973," \
+N = (
+    "((raccoon:19.19959,bear:6.80041):0.84600,"
+    "((sea_lion:11.99700,seal:12.00300):7.52973,"
     "((monkey:100.85930,cat:47.14069):20.59201,weasel:18.87953):2.09460):3.87382,dog:25.46154);"
+)
 
 
 def _small():
@@ -44,7 +56,10 @@ class TestNewick(unittest.TestCase):
 
     def test_tips_and_counts(self):
         t = _animals()
-        self.assertEqual(t.tip_names, ["raccoon", "bear", "sea_lion", "seal", "monkey", "cat", "weasel", "dog"])
+        self.assertEqual(
+            t.tip_names,
+            ["raccoon", "bear", "sea_lion", "seal", "monkey", "cat", "weasel", "dog"],
+        )
         self.assertEqual(t.nleaves, 8)
         self.assertEqual(t.ntips, 8)
         self.assertGreater(t.nnodes, 8)
@@ -127,7 +142,12 @@ class TestTreeOps(unittest.TestCase):
     def test_root(self):
         t = read_newick("((A,B),(C,D));")
         t.root("A")
-        self.assertIn("A", t.children[0].tip_names if not t.children[0].is_leaf() else t.children[0].name)
+        self.assertIn(
+            "A",
+            t.children[0].tip_names
+            if not t.children[0].is_leaf()
+            else t.children[0].name,
+        )
 
     def test_resolve_polytomies(self):
         t = read_newick("(A,B,C,D);")
@@ -193,11 +213,13 @@ class TestIO(unittest.TestCase):
     def test_detect(self):
         self.assertEqual(detect_format(N), "newick")
         self.assertEqual(detect_format("#NEXUS\n"), "nexus")
-        self.assertEqual(detect_format("{\"a\":1}"), "json")
+        self.assertEqual(detect_format('{"a":1}'), "json")
         self.assertEqual(detect_format("<?xml..."), "phyloxml")
 
     def test_read_write_newick_file(self):
-        import tempfile, os
+        import os
+        import tempfile
+
         d = tempfile.mkdtemp()
         src = os.path.join(d, "in.nwk")
         with open(src, "w") as fh:
@@ -231,7 +253,9 @@ class TestIO(unittest.TestCase):
         self.assertEqual(t2.tip_names, t.tip_names)
 
     def test_annotations_roundtrip(self):
-        ann = read_newick("((A:1[&rate=0.5],B:1[&rate=0.7])[&height=2.3],C:1);", annotations=True)
+        ann = read_newick(
+            "((A:1[&rate=0.5],B:1[&rate=0.7])[&height=2.3],C:1);", annotations=True
+        )
         inner = ann.get_internal_nodes()
         self.assertAlmostEqual(inner[0].height, 2.3)
         out = write_newick(ann, annotations=["rate", "height"])
@@ -242,7 +266,9 @@ class TestIO(unittest.TestCase):
 class TestAttach(unittest.TestCase):
     def test_attach(self):
         t = _animals()
-        attach(t, {"raccoon": "mammal", "dog": "mammal", "sea_lion": "mammal"}, key="class")
+        attach(
+            t, {"raccoon": "mammal", "dog": "mammal", "sea_lion": "mammal"}, key="class"
+        )
         self.assertEqual(get_tipdata(t, "class")["raccoon"], "mammal")
         self.assertNotIn("A", get_tipdata(t, "class"))
 
@@ -256,6 +282,7 @@ class TestAttach(unittest.TestCase):
 class TestPlot(unittest.TestCase):
     def setUp(self):
         import matplotlib
+
         matplotlib.use("Agg")
 
     def _ax_ok(self, ax):
@@ -287,11 +314,22 @@ class TestPlot(unittest.TestCase):
 
     def test_layouts_valid(self):
         t = _animals()
-        for layout in ("rectangular", "roundrect", "circular", "fan", "radial", "slanted", "unrooted", "time"):
+        for layout in (
+            "rectangular",
+            "roundrect",
+            "circular",
+            "fan",
+            "radial",
+            "slanted",
+            "unrooted",
+            "time",
+        ):
             self.assertTrue(self._ax_ok(draw_tree(t, layout=layout)))
 
     def test_render_save_default(self):
-        import tempfile, os
+        import os
+        import tempfile
+
         t = _animals()
         ax = render(t, backend="mpl", layout="circular")
         self.assertTrue(self._ax_ok(ax))
@@ -315,7 +353,9 @@ class TestPlot(unittest.TestCase):
         self.assertEqual(pal["A"], pal["A"])
 
     def test_tree_save(self):
-        import tempfile, os
+        import os
+        import tempfile
+
         t = _animals()
         p = os.path.join(tempfile.mkdtemp(), "t.png")
         self.assertEqual(t.save(p, layout="circular"), p)
@@ -325,8 +365,14 @@ class TestPlot(unittest.TestCase):
         t = _animals()
         for n in t.get_nodes():
             n.set_data("rate", n.branch_length if n.branch_length is not None else 0.0)
-        ax = draw_tree(t, layout="rectangular", tip_labels=True,
-                       branch_color_field="rate", show_colorbar=True, colorbar_label="rate")
+        ax = draw_tree(
+            t,
+            layout="rectangular",
+            tip_labels=True,
+            branch_color_field="rate",
+            show_colorbar=True,
+            colorbar_label="rate",
+        )
         self.assertIsNotNone(ax)
         # a colorbar is added as an extra axes on the figure
         self.assertGreaterEqual(len(ax.figure.axes), 2)
@@ -354,7 +400,9 @@ class TestPlot(unittest.TestCase):
 
     def test_theme_styles(self):
         import matplotlib.pyplot as plt
+
         from treeio import tree_theme
+
         ax = plt.subplots()[1]
         for style in ("clean", "void", "minimal", "plain"):
             tree_theme(ax, style=style)
@@ -362,7 +410,9 @@ class TestPlot(unittest.TestCase):
 
     def test_facet_grid(self):
         import matplotlib.pyplot as plt
+
         from treeio import facet_grid
+
         t = _animals()
         attach(t, {n.name: i for i, n in enumerate(t.get_tips())}, key="size")
         attach(t, {"raccoon": "m", "bear": "m", "monkey": "p", "dog": "p"}, key="grp")
@@ -372,27 +422,41 @@ class TestPlot(unittest.TestCase):
 
     def test_grid_of_trees_shared_y(self):
         import matplotlib.pyplot as plt
+
         from treeio import grid_of_trees
+
         t = _animals()
-        fig = grid_of_trees([t, t.copy()], labels=["a", "b"], layout="rectangular", tip_labels=True)
+        fig = grid_of_trees(
+            [t, t.copy()], labels=["a", "b"], layout="rectangular", tip_labels=True
+        )
         self.assertEqual(len(fig.axes), 2)
         self.assertIsNotNone(fig.axes[0].get_xlim())
         plt.close(fig)
 
     def test_tip_color_field_categorical(self):
         import matplotlib.pyplot as plt
+
         t = _animals()
         attach(t, {"raccoon": "m", "monkey": "p", "dog": "p"}, key="class")
-        ax = draw_tree(t, layout="rectangular", tip_labels=True, tip_color_field="class")
+        ax = draw_tree(
+            t, layout="rectangular", tip_labels=True, tip_color_field="class"
+        )
         # legend added as a separate axes (bbox_to_anchor) or legend object
         self.assertTrue(ax.get_legend() is not None)
         plt.close(ax.figure)
 
     def test_tip_color_field_continuous(self):
         import matplotlib.pyplot as plt
+
         t = _animals()
         attach(t, {n.name: (n.branch_length or 0) for n in t.get_tips()}, key="size")
-        ax = draw_tree(t, layout="rectangular", tip_points=True, tip_labels=False, tip_color_field="size")
+        ax = draw_tree(
+            t,
+            layout="rectangular",
+            tip_points=True,
+            tip_labels=False,
+            tip_color_field="size",
+        )
         self.assertGreaterEqual(len(ax.figure.axes), 2)  # colorbar axes
         plt.close(ax.figure)
 
@@ -405,16 +469,24 @@ class TestPlot(unittest.TestCase):
 
     def test_grid_of_trees_multirow_layouts(self):
         import matplotlib.pyplot as plt
+
         from treeio import grid_of_trees
+
         t = _animals()
-        fig = grid_of_trees([t, t.copy(), t.copy()], labels=["a", "b", "c"],
-                            layouts=["rectangular", "circular", "slanted"], ncols=2)
+        fig = grid_of_trees(
+            [t, t.copy(), t.copy()],
+            labels=["a", "b", "c"],
+            layouts=["rectangular", "circular", "slanted"],
+            ncols=2,
+        )
         # 2 cols x 2 rows (3 trees + 1 hidden)
         self.assertEqual(len(fig.axes), 4)
         plt.close(fig)
 
     def test_save_publication_dpi(self):
-        import tempfile, os
+        import os
+        import tempfile
+
         t = _animals()
         p = os.path.join(tempfile.mkdtemp(), "t.png")
         ret = render(t, layout="rectangular", path=p, dpi=150)

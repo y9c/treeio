@@ -1,4 +1,7 @@
-import unittest, tempfile, os
+import os
+import tempfile
+import unittest
+
 from treeio import read, render
 from treeio.show import tree_to_ascii
 
@@ -6,11 +9,12 @@ from treeio.show import tree_to_ascii
 class TestUnifiedRender(unittest.TestCase):
     def setUp(self):
         import matplotlib
+
         matplotlib.use("Agg")
         self.t = read("(A:1,B:2,C:3);")
 
     def test_mpl_default_backend(self):
-        import matplotlib
+
         ax = render(self.t, layout="rectangular")
         self.assertIsNotNone(ax)
         self.assertGreaterEqual(len(ax.collections), 1)

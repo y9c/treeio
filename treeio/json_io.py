@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
 #
 # Copyright © 2020 Ye Chang <yech1990@gmail.com>
 # Distributed under terms of the MIT license.
@@ -11,7 +9,6 @@ Read and write json format.
 """
 
 import json
-from typing import List
 
 from .tree import Tree
 
@@ -22,7 +19,7 @@ def read_json(
     child_key="children",
     branch_length_key="branch_length",
     support_key="support",
-) -> List[Tree]:
+) -> list[Tree]:
     """Return a json object in the format desribed below
 
     ```json
@@ -66,6 +63,13 @@ def read_json(
                 branch_length=obj.get(branch_length_key),
                 support=obj.get(support_key),
             )
+            # restore any per-node annotation (everything that is not one of
+            # the structural keys), so ``write_json``/``read_json`` round-trips
+            # ``set_data`` values.
+            structural = {name_key, branch_length_key, support_key, child_key}
+            for k, v in obj.items():
+                if k not in structural:
+                    node.set_data(k, v)
             tree_cur.append_child(node)
             if child_key in obj:
                 tree_cur = node
@@ -86,13 +90,20 @@ def write_json(
     branch_length_key="branch_length",
     support_key="support",
 ) -> str:
-    """Return a json object in the format desribed below
-    """
+    """Return a json object in the format desribed below"""
 
     def _record_node(node):
         attr_key = ["name", "branch_length", "support"]
         attr_values = [name_key, branch_length_key, support_key]
         data = {v: _json_ok(getattr(node, k)) for k, v in zip(attr_key, attr_values)}
+        # persist every per-node ``set_data`` annotation (excluding internal
+        # underscore keys such as layout coordinates) so JSON round-trips them.
+        ann = node._annotations
+        if ann:
+            for k, v in ann.items():
+                if k.startswith("_"):
+                    continue
+                data[k] = _json_ok(v)
         children = [_record_node(child) for child in node.children]
         if children:
             data[child_key] = children
@@ -112,6 +123,7 @@ def _json_ok(value):
     """Return JSON-safe values (non-finite floats become ``None``)."""
     if isinstance(value, float):
         import math
+
         return value if math.isfinite(value) else None
     return value
 

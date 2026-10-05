@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
 #
 # Copyright © 2020 Ye Chang <yech1990@gmail.com>
 # Distributed under terms of the MIT license.
@@ -29,8 +27,8 @@ Examples
 
 from __future__ import annotations
 
+import math
 import xml.etree.ElementTree as ET
-from typing import Dict, List
 
 from .tree import Tree
 
@@ -61,6 +59,8 @@ def _to_scalar(text):
 
 def _fmt(x):
     f = float(x)
+    if not math.isfinite(f):
+        return str(f)
     return str(int(f)) if f == int(f) else repr(f)
 
 
@@ -80,10 +80,10 @@ def read_nexml(xml_string: str) -> Tree:
     return trees[0]
 
 
-def read_nexmls(xml_string: str) -> List[Tree]:
+def read_nexmls(xml_string: str) -> list[Tree]:
     """Read every NeXML ``tree`` into a list of :class:`Tree`."""
     root = ET.fromstring(xml_string)
-    otus: Dict[str, str] = {}
+    otus: dict[str, str] = {}
     for otu in _find_all(root, "otu"):
         otus[otu.get("id")] = otu.get("label") or otu.get("id")
     trees = []
@@ -96,7 +96,7 @@ def read_nexmls(xml_string: str) -> List[Tree]:
 
 def _parse_tree(tree_elem, otus):
     # map node id -> Tree, and edges (source -> [(target, length)])
-    nodes: Dict[str, Tree] = {}
+    nodes: dict[str, Tree] = {}
     edges = []
     root_id = None
     for ed in _find_all(tree_elem, "edge"):
@@ -108,7 +108,13 @@ def _parse_tree(tree_elem, otus):
         for meta in nd.iter(_label("meta")):
             key = meta.get("property")
             if key:
-                setattr(node, key, _to_scalar(meta.get("content", "")))
+                content = meta.get("content", "")
+                if key == "name":
+                    # a ``name`` meta restores the node's real name slot (an
+                    # internal / root node has no ``otu`` label to carry it)
+                    node.name = content or node.name
+                else:
+                    setattr(node, key, _to_scalar(content))
         if _find_all(nd, "branch_length") or nd.get("branch_length"):
             bl = list(_find_all(nd, "branch_length"))
             if bl:
@@ -141,7 +147,8 @@ def write_nexml(tree: Tree, name: str = "Tree") -> str:
     root = ET.Element(_label("nexml"))
     root.set("xmlns", _NS)
     root.set("xmlns:nex", _NS)
-    otus = ET.SubElement(root, _label("otus")); otus.set("id", "otus1")
+    otus = ET.SubElement(root, _label("otus"))
+    otus.set("id", "otus1")
     # assign otu ids to tips
     tips = tree.get_tips()
     otu_ids = {tip: f"otu{i + 1}" for i, tip in enumerate(tips)}
@@ -149,7 +156,8 @@ def write_nexml(tree: Tree, name: str = "Tree") -> str:
         otu = ET.SubElement(otus, _label("otu"))
         otu.set("id", otu_ids[tip])
         otu.set("label", tip.name)
-    trees = ET.SubElement(root, _label("trees")); trees.set("id", "trees1")
+    trees = ET.SubElement(root, _label("trees"))
+    trees.set("id", "trees1")
     tree_el = ET.SubElement(trees, _label("tree"))
     tree_el.set("id", name)
     nids = {node: f"n{index}" for index, node in enumerate(tree.traverse("preorder"))}
@@ -159,6 +167,13 @@ def write_nexml(tree: Tree, name: str = "Tree") -> str:
         nd.set("id", nids[node])
         if node.is_leaf():
             nd.set("otu", otu_ids[node])
+        # Names of root / internal nodes are not carried by an ``otu`` label, so
+        # record them as a ``<meta property="name">`` so the round-trip keeps
+        # them (the default ``unknown`` placeholder is not written).
+        if node.name and node.name != "unknown":
+            meta = ET.SubElement(nd, _label("meta"))
+            meta.set("property", "name")
+            meta.set("content", str(node.name))
         if node.support is not None:
             meta = ET.SubElement(nd, _label("meta"))
             meta.set("property", "support")

@@ -1,7 +1,15 @@
+import os
+import tempfile
 import unittest
-import tempfile, os
-from treeio import (read, write,
-                    read_nexml, write_nexml, read_mrbayes, read_iqtree, read_raxml, Tree)
+
+from treeio import (
+    read,
+    read_iqtree,
+    read_mrbayes,
+    read_nexml,
+    read_raxml,
+    write_nexml,
+)
 
 
 class TestVendorFormats(unittest.TestCase):
@@ -12,18 +20,22 @@ class TestVendorFormats(unittest.TestCase):
         self.assertEqual(set(t2.tip_names), {"A", "B"})
 
     def test_nexml_generic(self):
-        xml = ("<nexml xmlns=\"http://www.nexml.org/2009\">"
-               "<otus id=\"o\"><otu id=\"t1\" label=\"A\"/><otu id=\"t2\" label=\"B\"/></otus>"
-               "<trees id=\"ts\"><tree id=\"tr\"><node id=\"n1\" otu=\"t1\"/>"
-               "<node id=\"n2\" otu=\"t2\"/><node id=\"n0\"/>"
-               "<root id=\"n0\"/><edge id=\"e1\" source=\"n0\" target=\"n1\"/>"
-               "<edge id=\"e2\" source=\"n0\" target=\"n2\"/></tree></trees></nexml>")
+        xml = (
+            '<nexml xmlns="http://www.nexml.org/2009">'
+            '<otus id="o"><otu id="t1" label="A"/><otu id="t2" label="B"/></otus>'
+            '<trees id="ts"><tree id="tr"><node id="n1" otu="t1"/>'
+            '<node id="n2" otu="t2"/><node id="n0"/>'
+            '<root id="n0"/><edge id="e1" source="n0" target="n1"/>'
+            '<edge id="e2" source="n0" target="n2"/></tree></trees></nexml>'
+        )
         t = read(xml)
         self.assertEqual(set(t.tip_names), {"A", "B"})
 
     def test_mrbayes(self):
-        text = ("#NEXUS\nBEGIN TREES;\n TREE t = ((A,B),C);\nEND;\n"
-                "BEGIN MRBAYES;\n lset nst=6 rates=gamma;\n mcmc ngen=1000;\nEND;")
+        text = (
+            "#NEXUS\nBEGIN TREES;\n TREE t = ((A,B),C);\nEND;\n"
+            "BEGIN MRBAYES;\n lset nst=6 rates=gamma;\n mcmc ngen=1000;\nEND;"
+        )
         t = read_mrbayes(text)
         self.assertEqual(set(t.tip_names), {"A", "B", "C"})
         self.assertIn("lset", t.get_data("mrbayes"))
@@ -37,14 +49,15 @@ class TestVendorFormats(unittest.TestCase):
 class TestStreaming(unittest.TestCase):
     def setUp(self):
         import matplotlib
+
         matplotlib.use("Agg")
 
     def _tree(self):
         return read("(A:1,B:2,C:3);")
 
     def test_render_save_file(self):
-        import matplotlib
         from treeio import render
+
         d = tempfile.mkdtemp()
         p = os.path.join(d, "t.png")
         ret = render(self._tree(), backend="mpl", layout="rectangular", path=p)

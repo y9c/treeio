@@ -1,6 +1,14 @@
 import unittest
-from treeio import (read, write, read_phylip, write_phylip, read_jplace,
-                    read_newick, write_newick, detect_format)
+
+from treeio import (
+    detect_format,
+    read,
+    read_jplace,
+    read_newick,
+    read_phylip,
+    write_newick,
+    write_phylip,
+)
 
 
 class TestFormats(unittest.TestCase):
@@ -23,8 +31,10 @@ class TestFormats(unittest.TestCase):
         self.assertEqual(len(t.placements["placements"]), 1)
 
     def test_nhx_annotations(self):
-        t = read_newick("(A:1[&&NHX:S=human,D=Y],B:1[&&NHX:S=chimp,D=Y])[&&NHX:S=Hominidae];",
-                        annotations=True)
+        t = read_newick(
+            "(A:1[&&NHX:S=human,D=Y],B:1[&&NHX:S=chimp,D=Y])[&&NHX:S=Hominidae];",
+            annotations=True,
+        )
         tips = {x.name: x for x in t.get_tips()}
         self.assertEqual(tips["A"].get_data("S"), "human")
         self.assertEqual(tips["B"].get_data("S"), "chimp")

@@ -1,45 +1,75 @@
+import json
+import os
+import tempfile
 import unittest
-import json, tempfile, os
+
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from treeio import (Tree, read, write, read_newick, write_newick, read_newicks, read_nexus, write_nexus,
-                    read_phyloxml, write_phyloxml, read_jplace, detect_format, color_by_value,
-                    save, render, register_layout, register_backend, convert_format, convert_string,
-                    tree_coords)
+
+from treeio import (
+    Tree,
+    color_by_value,
+    convert_format,
+    convert_string,
+    detect_format,
+    read,
+    read_jplace,
+    read_newick,
+    read_newicks,
+    read_nexus,
+    read_phyloxml,
+    register_backend,
+    register_layout,
+    save,
+    tree_coords,
+    write,
+    write_newick,
+    write_nexus,
+    write_phyloxml,
+)
 from treeio.show import tree_to_ascii
 
 
 def _deep(n=2000):
-    root = Tree("r"); cur = root
+    root = Tree("r")
+    cur = root
     for i in range(n):
-        tip = Tree(f"t{i}"); nxt = Tree(); cur.children = [tip, nxt]; cur = nxt
+        tip = Tree(f"t{i}")
+        nxt = Tree()
+        cur.children = [tip, nxt]
+        cur = nxt
     return root
 
 
 class TestBugFixes(unittest.TestCase):
     # A: parent/child consistency
     def test_parent_none_detaches(self):
-        a, b = Tree("a"), Tree("b"); a.children = [b]
+        a, b = Tree("a"), Tree("b")
+        a.children = [b]
         b.parent = None
         self.assertNotIn(b, a.children)
         self.assertIsNone(b.parent)
 
     def test_append_reparent_detaches(self):
         a, c, x = Tree("a"), Tree("c"), Tree("x")
-        a.children = [c]; c.children = [x]
+        a.children = [c]
+        c.children = [x]
         a.append_child(x)
         self.assertNotIn(x, c.children)
         self.assertIs(x.parent, a)
 
     def test_children_setter_reparents(self):
         a, c, x = Tree("a"), Tree("c"), Tree("x")
-        a.children = [c]; c.children = [x]
+        a.children = [c]
+        c.children = [x]
         a.children = [x]
         self.assertNotIn(x, c.children)
 
     def test_children_readonly(self):
-        a, b = Tree("a"), Tree("b"); a.children = [b]
+        a, b = Tree("a"), Tree("b")
+        a.children = [b]
         with self.assertRaises(AttributeError):
             a.children.append(Tree("z"))
 
@@ -63,7 +93,7 @@ class TestBugFixes(unittest.TestCase):
         s = write(t, format="json")
         self.assertNotIn("Infinity", s)
         json.loads(s)
-        w = write(t, format="json")
+        write(t, format="json")
         # two trees -> array
 
     def test_nexus_annotations_roundtrip(self):
@@ -105,26 +135,31 @@ class TestBugFixes(unittest.TestCase):
         s = "#NEXUS\n[mention mrbayes]\nBEGIN TREES;\n TREE t=(A,B);\nEND;"
         self.assertEqual(detect_format(s), "nexus")
 
-    def test_get_distance_valueerror(self):
+    def test_get_distance_typeerror(self):
         t = read_newick("(A,B);")
-        with self.assertRaises(ValueError):
+        with self.assertRaises(TypeError):
             t.get_distance("A", "B")
 
     # -- second bug-hunt pass --
     def test_nexml_preserves_support(self):
         from treeio import read_nexml, write_nexml
+
         t = read_newick("((A:1,B:1)95:0.3,C:1);")
         t2 = read_nexml(write_nexml(t))
         self.assertTrue(any(n.support == 95.0 for n in t2.get_internal_nodes()))
 
     def test_register_format_guards_builtins(self):
         from treeio import register_format
+
         with self.assertRaises(ValueError):
             register_format("newick", read=lambda s: [read_newick(s)])
 
     def test_unregister_format(self):
-        from treeio import register_format, unregister_format, read
-        register_format("zzz", read=lambda s: [read_newick(s)], write=lambda t: write_newick(t))
+        from treeio import register_format, unregister_format
+
+        register_format(
+            "zzz", read=lambda s: [read_newick(s)], write=lambda t: write_newick(t)
+        )
         self.assertIsNotNone(unregister_format("zzz"))
         self.assertIsNone(unregister_format("zzz"))
 
@@ -133,7 +168,6 @@ class TestBugFixes(unittest.TestCase):
             read("")
 
     def test_read_newicks_stops_on_garbage(self):
-        from treeio import read_newicks
         self.assertEqual(len(read_newicks("(A,B);%%%garbage")), 1)
 
     def test_prune_to_single_node(self):
@@ -149,6 +183,7 @@ class TestBugFixes(unittest.TestCase):
     # -- third bug-hunt pass --
     def test_read_tree_idempotent(self):
         from treeio import read, read_many
+
         t = read_newick("(A,B);")
         self.assertIs(read(t), t)
         self.assertEqual(read_many(t), [t])
@@ -175,29 +210,31 @@ class TestBugFixes(unittest.TestCase):
         # 3-point L path of rectangular.
         t = read_newick("((A:1,B:2):0.5,C:3);")
         from treeio.plot import edge_segments
+
         rr = edge_segments(t, layout="roundrect")
         rc = edge_segments(t, layout="rectangular")
         self.assertTrue(all(len(s) >= 4 for s in rr))
         self.assertTrue(all(len(s) == 3 for s in rc))
 
     def test_layouts_raise_on_unknown(self):
-        from treeio import tree_coords
         t = read_newick("(A,B);")
         with self.assertRaises(ValueError):
             tree_coords(t, layout="definitely_not_a_layout")
 
     def test_new_polar_layouts_implemented(self):
-        from treeio import tree_coords
         t = read_newick("((A:1,B:2):0.5,C:3);")
         rect = tree_coords(t, layout="rectangular")
         for lay in ("ellipse", "equal_angle", "daylight"):
             c = tree_coords(t, layout=lay)
-            self.assertFalse(all(c[n] == rect[n] for n in c),
-                             msg=f"{lay} degraded to rectangular")
+            self.assertFalse(
+                all(c[n] == rect[n] for n in c), msg=f"{lay} degraded to rectangular"
+            )
 
     def test_gheatmap_circular_rings_stack(self):
-        from treeio import Tree, attach, gheatmap, draw_tree
         import random
+
+        from treeio import attach, draw_tree, gheatmap
+
         random.seed(1)
         t = read_newick("(" + ",".join(f"t{i}:1" for i in range(8)) + ");")
         for c in ("a", "b", "c"):

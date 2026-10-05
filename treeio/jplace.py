@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
 #
 # Copyright © 2020 Ye Chang <yech1990@gmail.com>
 # Distributed under terms of the MIT license.
@@ -24,8 +22,8 @@ from __future__ import annotations
 
 import json
 
-from .tree import Tree
 from .newick import read_newick
+from .tree import Tree
 
 __all__ = ["read_jplace"]
 

@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
 #
 # Copyright © 2020 Ye Chang <yech1990@gmail.com>
 # Distributed under terms of the MIT license.
@@ -13,12 +11,12 @@
 Textually visualized tree, with vertically-centered parent nodes.
 """
 
-from typing import Callable, Tuple, List
+from collections.abc import Callable
 from functools import reduce
-from itertools import chain, takewhile
+from itertools import chain
 
-from .tree import Tree
 from .json_io import read_json
+from .tree import Tree
 
 
 def tree_to_ascii(tree: Tree, is_compact: bool, is_pruned: bool) -> str:
@@ -62,8 +60,7 @@ def _tree_depth(tree: Tree) -> int:
     stack = [(tree, 0)]
     while stack:
         node, d = stack.pop()
-        if d > maxd:
-            maxd = d
+        maxd = max(maxd, d)
         for c in node._children:
             stack.append((c, d + 1))
     return maxd
@@ -77,14 +74,10 @@ def _tree_to_ascii_body(tree: Tree, is_compact: bool, is_pruned: bool) -> str:
         """Right to left function composition."""
         return lambda f: lambda x: g(f(x))
 
-    def intercalate(x: List[str]) -> Callable:
+    def intercalate(x: list[str]) -> Callable:
         """The concatenation of xs interspersed with copies of x."""
-        return (
-            lambda xs: list(
-                chain.from_iterable(
-                    reduce(lambda a, v: a + [x, v], xs[1:], [xs[0]])
-                )
-            )
+        return lambda xs: (
+            list(chain.from_iterable(reduce(lambda a, v: a + [x, v], xs[1:], [xs[0]])))
             if xs
             else []
         )
@@ -118,6 +111,7 @@ def _tree_to_ascii_body(tree: Tree, is_compact: bool, is_pruned: bool) -> str:
 
     def levels(tree):
         """Nodes of the tree at each depth, breadth-first from the root."""
+
         def go(x):
             v = x
             while len(v) > 0:
@@ -133,7 +127,9 @@ def _tree_to_ascii_body(tree: Tree, is_compact: bool, is_pruned: bool) -> str:
         """
 
         level_widths = reduce(
-            lambda a, xs: a + [max(len(x) for x in xs)], levels(tree_dict), [],
+            lambda a, xs: a + [max(len(x) for x in xs)],
+            levels(tree_dict),
+            [],
         )
 
         def g(f, w):
@@ -168,9 +164,7 @@ def _tree_to_ascii_body(tree: Tree, is_compact: bool, is_pruned: bool) -> str:
                         return _x + "─" + z
 
                     rightAligned = leftPad(1 + w)
-                    return fghOverLMR(rightAligned, lineLinked, rightAligned)(
-                        f(xs[0])
-                    )
+                    return fghOverLMR(rightAligned, lineLinked, rightAligned)(f(xs[0]))
 
                 # CHILDREN --------------------------------
                 else:
@@ -180,10 +174,7 @@ def _tree_to_ascii_body(tree: Tree, is_compact: bool, is_pruned: bool) -> str:
                         lmrFromStrings(
                             intercalate([] if is_compact else ["│"])(
                                 [treeFix(" ", "┌", "│")(lmrs[0])]
-                                + [
-                                    treeFix("│", "├", "│")(x)
-                                    for x in lmrs[1:-1]
-                                ]
+                                + [treeFix("│", "├", "│")(x) for x in lmrs[1:-1]]
                                 + [treeFix("│", "└", " ")(lmrs[-1])]
                             )
                         )

@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
 #
 # Copyright © 2020 Ye Chang <yech1990@gmail.com>
 # Distributed under terms of the MIT license.
@@ -30,20 +28,18 @@ Examples
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import List, Optional, Union
-
-from .tree import Tree
-from .newick import read_newicks, write_newick
-from .nexus import read_nexuses, write_nexus
-from .json_io import read_json, write_json
-from .phyloxml import read_phyloxmls, write_phyloxml
-from .phylip import read_phylips, write_phylip
-from .jplace import read_jplace
-from .nexml import read_nexmls, write_nexml
-from .vendor import read_mrbayeses, read_iqtree, read_raxml
-
 import re as _re
+from pathlib import Path
+
+from .jplace import read_jplace
+from .json_io import read_json, write_json
+from .newick import read_newicks, write_newick
+from .nexml import read_nexmls, write_nexml
+from .nexus import read_nexuses, write_nexus
+from .phylip import read_phylips, write_phylip
+from .phyloxml import read_phyloxmls, write_phyloxml
+from .tree import Tree
+from .vendor import read_iqtree, read_mrbayeses, read_raxml
 
 _PHYLIP_HEADER_RE = _re.compile(r"^\s*\d+\s+\d+\s*$")
 
@@ -95,36 +91,46 @@ def _extension_map() -> dict:
     return mapping
 
 
-
 def detect_format(source: str) -> str:
     """Best-effort detection of the tree format of ``source``."""
     s = source.lstrip()
     if s.startswith("#NEXUS"):
         # only call it MrBayes when there is an actual ``begin mrbayes`` block
-        if _re.search(r"BEGIN\s+MRBAYES\s*;", s, _re.I):
+        if _re.search(r"BEGIN\s+MRBAYES\s*;", s, _re.IGNORECASE):
             return "mrbayes"
         return "nexus"
-    if s.startswith("<nexml"):
+    # Determine the root element's *local* name across an optional ``<?xml?>``
+    # declaration, leading markup (comments / DOCTYPE) and a namespace prefix
+    # (e.g. ``<ns0:nexml>``).  The old ``startswith("<nexml")`` check missed a
+    # declaration or a prefixed root, letting NeXML fall through to ``phyloxml``.
+    decl = _re.match(r"\s*<\?xml[^>]*\?>", s)
+    if decl:
+        s = s[decl.end() :].lstrip()
+    tag_m = _re.match(r"<([A-Za-z_][\w.-]*:)?([A-Za-z_][\w.-]*)", s)
+    root_local = tag_m.group(2) if tag_m else None
+    if root_local == "nexml":
         return "nexml"
-    if s.startswith("<?xml") or s.startswith("<phyloxml") or s.startswith("<"):
+    if root_local == "phyloxml":
+        return "phyloxml"
+    if s.startswith(("<?xml", "<")):
         return "phyloxml"
     if s.startswith("{"):
         # JSON may be a plain tree or a Jplace placement document
         return "jplace" if '"tree"' in s else "json"
     if _PHYLIP_HEADER_RE.match(s.split("\n", 1)[0]):
         return "phylip"
-    if s.startswith("(") or s.startswith("["):
+    if s.startswith(("(", "[")):
         # [&R] rooted marker -> newick-ish
         return "newick"
     return "newick"
 
 
-def _format_from_path(path: str) -> Optional[str]:
+def _format_from_path(path: str) -> str | None:
     ext = Path(path).suffix.lstrip(".").lower()
     return _extension_map().get(ext)
 
 
-def read(source: Union[str, Path, "Tree"], format: Optional[str] = None) -> Tree:
+def read(source: str | Path | Tree, format: str | None = None) -> Tree:
     """Read a tree from a file path or raw string.
 
     If ``source`` is an existing file path it is read from disc; otherwise the
@@ -141,7 +147,7 @@ def read(source: Union[str, Path, "Tree"], format: Optional[str] = None) -> Tree
     return trees[0]
 
 
-def read_many(source: Union[str, Path, "Tree"], format: Optional[str] = None) -> List[Tree]:
+def read_many(source: str | Path | Tree, format: str | None = None) -> list[Tree]:
     """Read every tree found in ``source`` (file path or raw string).
 
     Passing a single :class:`Tree`` returns ``[tree]``.
@@ -153,12 +159,12 @@ def read_many(source: Union[str, Path, "Tree"], format: Optional[str] = None) ->
     return _read_trees(payload, fmt)
 
 
-def _read_payload(source: Union[str, Path]) -> str:
+def _read_payload(source: str | Path) -> str:
     s = str(source)
     # Structured data (JSON / newick / ...) is never a path: return it verbatim
     # before any filesystem stat, which would raise on over-long strings.
     stripped = s.lstrip()
-    if stripped[:1] in ("{", "[", "(", "\""):
+    if stripped[:1] in ("{", "[", "(", '"'):
         return s
     if s.endswith((";", "};")):
         return s
@@ -171,7 +177,7 @@ def _read_payload(source: Union[str, Path]) -> str:
     return s
 
 
-def _read_trees(payload: str, fmt: str) -> List[Tree]:
+def _read_trees(payload: str, fmt: str) -> list[Tree]:
     if fmt == "newick":
         return read_newicks(payload)
     if fmt == "nexus":
@@ -199,11 +205,11 @@ def _read_trees(payload: str, fmt: str) -> List[Tree]:
 
 
 def write(
-    tree: Union[Tree, List[Tree]],
-    target: Optional[Union[str, Path]] = None,
-    format: Optional[str] = None,
+    tree: Tree | list[Tree],
+    target: str | Path | None = None,
+    format: str | None = None,
     **kwargs,
-) -> Optional[str]:
+) -> str | None:
     """Write a tree to a file or return its serialised string.
 
     If ``target`` is ``None`` the serialised string is returned.  The format
@@ -237,4 +243,11 @@ def _serialize(tree, fmt: str, **kwargs) -> str:
     raise ValueError(f"unknown format {fmt!r}")
 
 
-__all__ = ["read", "read_many", "write", "detect_format", "register_format", "unregister_format"]
+__all__ = [
+    "detect_format",
+    "read",
+    "read_many",
+    "register_format",
+    "unregister_format",
+    "write",
+]

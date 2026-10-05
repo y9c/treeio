@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
 #
 # Copyright © 2020 Ye Chang <yech1990@gmail.com>
 # Distributed under terms of the MIT license.
@@ -30,7 +28,6 @@ Examples
 from __future__ import annotations
 
 import math
-from typing import List, Optional
 
 from .tree import Tree
 
@@ -110,9 +107,11 @@ class _NewickParser:
         """Read an unquoted token (label or number), stopping at specials."""
         start = self.i
         t, n = self.text, self.n
-        while self.i < n and t[self.i] not in _SPECIAL and t[self.i] not in " \t\n\r\f\v":
+        while (
+            self.i < n and t[self.i] not in _SPECIAL and t[self.i] not in " \t\n\r\f\v"
+        ):
             self.i += 1
-        return t[start:self.i]
+        return t[start : self.i]
 
     # -- grammar ------------------------------------------------------- --
     def parse(self) -> Tree:
@@ -133,7 +132,10 @@ class _NewickParser:
         # reject it rather than silently returning a one-tip junk tree.  A real
         # tree always has at least one leaf carrying an actual name or length.
         leaves = tree.get_tips()
-        if not leaves or all((not l.name or l.name == "unknown") and l.branch_length is None for l in leaves):
+        if not leaves or all(
+            (not l.name or l.name == "unknown") and l.branch_length is None
+            for l in leaves
+        ):
             raise ValueError("no tree found in newick string")
         if tree.parent is not None:
             tree.isolated()
@@ -145,7 +147,11 @@ class _NewickParser:
         out = []
         while True:
             self._skip()
-            if self._peek() == "[" and self.i + 1 < self.n and self.text[self.i + 1] == "&":
+            if (
+                self._peek() == "["
+                and self.i + 1 < self.n
+                and self.text[self.i + 1] == "&"
+            ):
                 out.append(self._read_annotation())
             else:
                 break
@@ -212,7 +218,11 @@ class _NewickParser:
     def _capture_annotations(self, node: Tree) -> None:
         while True:
             self._skip()
-            if self._peek() == "[" and self.i + 1 < self.n and self.text[self.i + 1] == "&":
+            if (
+                self._peek() == "["
+                and self.i + 1 < self.n
+                and self.text[self.i + 1] == "&"
+            ):
                 for key, value in self._read_annotation().items():
                     setattr(node, key, value)
             else:
@@ -302,8 +312,10 @@ def _needs_quote(label: str) -> bool:
 
 
 def write_newick(
-    tree: Tree, include_dist: bool = True, include_support: bool = True,
-    annotations: Optional[list] = None,
+    tree: Tree,
+    include_dist: bool = True,
+    include_support: bool = True,
+    annotations: list | None = None,
 ) -> str:
     """Write Tree object into a string in newick format.
 
@@ -324,7 +336,7 @@ def write_newick(
 
 
 def _write_node(
-    node: Tree, include_dist: bool, include_support: bool, annotations: Optional[list]
+    node: Tree, include_dist: bool, include_support: bool, annotations: list | None
 ) -> str:
     label = _write_label(node, include_support)
     if node.is_leaf():
@@ -341,7 +353,7 @@ def _write_node(
     return s
 
 
-def _write_annotations(node: Tree, annotations: Optional[list]) -> str:
+def _write_annotations(node: Tree, annotations: list | None) -> str:
     if not annotations:
         return ""
     parts = []
@@ -366,7 +378,9 @@ def _format_anno(value) -> str:
 def _write_label(node: Tree, include_support: bool) -> str:
     label = node.name
     if label is None or label in ("", "unknown"):
-        label = str(node.support) if include_support and node.support is not None else ""
+        label = (
+            str(node.support) if include_support and node.support is not None else ""
+        )
     if label == "":
         return label
     return f"'{label}'" if _needs_quote(label) else label
@@ -383,14 +397,14 @@ def read_newick(nwk_string: str, annotations: bool = False) -> Tree:
     return parser.parse()
 
 
-def read_newicks(nwk_string: str) -> List[Tree]:
+def read_newicks(nwk_string: str) -> list[Tree]:
     """Read one or more newick trees (separated by ``;``) into a list.
 
     Leading whitespace and bracketed comments are skipped; trailing garbage is
     ignored.  (NEXUS-structured input is not handled here -- use
     :func:`treeio.read_nexus` for that.)
     """
-    trees: List[Tree] = []
+    trees: list[Tree] = []
     idx = 0
     length = len(nwk_string)
     while True:
@@ -401,7 +415,7 @@ def read_newicks(nwk_string: str) -> List[Tree]:
             break
         # only start a new tree on a parenthesised group, a lone node label, or
         # a bracketed root marker; anything else is trailing garbage -> stop.
-        head = nwk_string[parser.i:parser.i + 1]
+        head = nwk_string[parser.i : parser.i + 1]
         if head not in ("(", "[") and not _is_number(head):
             break
         trees.append(parser.parse())
@@ -410,9 +424,11 @@ def read_newicks(nwk_string: str) -> List[Tree]:
 
 
 if __name__ == "__main__":
-    nwk = "((raccoon:19.19959,bear:6.80041):0.84600," \
-          "((sea_lion:11.99700,seal:12.00300):7.52973," \
-          "((monkey:100.85930,cat:47.14069):20.59201,weasel:18.87953):2.09460):3.87382,dog:25.46154);"
+    nwk = (
+        "((raccoon:19.19959,bear:6.80041):0.84600,"
+        "((sea_lion:11.99700,seal:12.00300):7.52973,"
+        "((monkey:100.85930,cat:47.14069):20.59201,weasel:18.87953):2.09460):3.87382,dog:25.46154);"
+    )
     t = read_newick(nwk)
     print(t.tip_names)
     print(t.nleaves, t.nnodes, t.is_binary())

@@ -1,10 +1,7 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-
 """Tests for `treeio` package."""
 
-
 import unittest
+
 from click.testing import CliRunner
 
 from treeio import cli

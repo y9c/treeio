@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
 #
 # Copyright © 2020 Ye Chang <yech1990@gmail.com>
 # Distributed under terms of the MIT license.
@@ -33,11 +31,11 @@ Examples
 from __future__ import annotations
 
 import math
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple, Union
+from collections.abc import Sequence
 
 from .tree import Tree
 
-__all__ = ["distance_matrix", "neighbor_joining", "build_tree"]
+__all__ = ["build_tree", "distance_matrix", "neighbor_joining"]
 
 
 # ---------------------------------------------------------------------- --
@@ -58,15 +56,22 @@ def _seq_label(seq, index: int) -> str:
     return str(index)
 
 
-def _normalise(sequences) -> Tuple[List[str], List[str]]:
+def _normalise(sequences) -> tuple[list[str], list[str]]:
     """Return ``(labels, texts)`` for many input forms."""
     if isinstance(sequences, dict):
         items = list(sequences.items())
         return [str(k) for k, _ in items], [_seq_text(v) for _, v in items]
     items = list(sequences)
-    if items and isinstance(items[0], (tuple, list)) and len(items[0]) == 2 and isinstance(items[0][1], str):
+    if (
+        items
+        and isinstance(items[0], (tuple, list))
+        and len(items[0]) == 2
+        and isinstance(items[0][1], str)
+    ):
         return [str(k) for k, _ in items], [_seq_text(v) for _, v in items]
-    return [str(_seq_label(s, i)) for i, s in enumerate(items)], [_seq_text(s) for s in items]
+    return [str(_seq_label(s, i)) for i, s in enumerate(items)], [
+        _seq_text(s) for s in items
+    ]
 
 
 # ---------------------------------------------------------------------- --
@@ -106,14 +111,16 @@ _MODELS = {
 }
 
 
-def distance_matrix(sequences, model: str = "p") -> Tuple[List[str], List[List[float]]]:
+def distance_matrix(sequences, model: str = "p") -> tuple[list[str], list[list[float]]]:
     """Return ``(labels, matrix)`` of pairwise distances.
 
     ``model`` may be ``"p"`` (raw p-distance, default) or ``"jc"`` / ``"jc69"``
     (Jukes-Cantor corrected).  All sequences must be aligned (equal length).
     """
     if model not in _MODELS:
-        raise ValueError(f"unknown distance model {model!r}; choose from {sorted(set(_MODELS))}")
+        raise ValueError(
+            f"unknown distance model {model!r}; choose from {sorted(set(_MODELS))}"
+        )
     labels, texts = _normalise(sequences)
     n = len(texts)
     func = _MODELS[model]
@@ -128,6 +135,31 @@ def distance_matrix(sequences, model: str = "p") -> Tuple[List[str], List[List[f
 # ---------------------------------------------------------------------- --
 # neighbour joining (pure Python)
 # ---------------------------------------------------------------------- --
+def _order_by_labels(root: Tree, labels: Sequence[str]) -> Tree:
+    """Reorder children (post-order) so tips appear in ``labels`` order.
+
+    Neighbour joining assembles the tree bottom-up and may place the tips in a
+    different order from the input ``labels``; re-ordering the children does not
+    change the topology or branch lengths, only the depth-first tip order, so
+    ``get_cophenetic_distance()`` still reproduces the input matrix but is aligned
+    with the caller-provided label order.
+    """
+    idx = {name: i for i, name in enumerate(labels)}
+    min_idx: dict[int, float] = {}
+
+    def _recurse(node: Tree) -> None:
+        if node.is_leaf():
+            min_idx[id(node)] = idx.get(node.name, float("inf"))
+            return
+        for child in node._children:
+            _recurse(child)
+        node._children.sort(key=lambda c: min_idx[id(c)])
+        min_idx[id(node)] = min(min_idx[id(c)] for c in node._children)
+
+    _recurse(root)
+    return root
+
+
 def neighbor_joining(labels: Sequence[str], matrix: Sequence[Sequence[float]]) -> Tree:
     """Build a Tree from a pairwise distance matrix using neighbour joining.
 
@@ -155,7 +187,7 @@ def neighbor_joining(labels: Sequence[str], matrix: Sequence[Sequence[float]]) -
             root = Tree()
             root.append_child(nodes[i])
             root.append_child(nodes[j])
-            return root
+            return _order_by_labels(root, labels)
 
         # row sums over the active set
         row_sum = {a: sum(dist[a][b] for b in active) for a in active}
@@ -171,8 +203,6 @@ def neighbor_joining(labels: Sequence[str], matrix: Sequence[Sequence[float]]) -
 
         limb_i = 0.5 * dist[i][j] + (row_sum[i] - row_sum[j]) / (2.0 * (m - 2))
         limb_j = dist[i][j] - limb_i
-        limb_i = max(limb_i, 0.0)
-        limb_j = max(limb_j, 0.0)
 
         u = Tree()
         nodes[i].branch_length = limb_i
@@ -183,7 +213,6 @@ def neighbor_joining(labels: Sequence[str], matrix: Sequence[Sequence[float]]) -
         # new active clusters (drop i, j; add u)
         new_active = [a for a in active if a not in (i, j)]
         keys = new_active + ["_u"]
-        k2i = {a: x for x, a in enumerate(new_active)}
         new_dist = [[0.0] * len(keys) for _ in keys]
         for x, a in enumerate(new_active):
             for y, b in enumerate(new_active):
@@ -191,7 +220,7 @@ def neighbor_joining(labels: Sequence[str], matrix: Sequence[Sequence[float]]) -
                     new_dist[x][y] = new_dist[y][x] = dist[a][b]
             # new cluster <-> u
             d = 0.5 * (dist[i][a] + dist[j][a] - dist[i][j])
-            new_dist[x][-1] = new_dist[-1][x] = max(d, 0.0)
+            new_dist[x][-1] = new_dist[-1][x] = d
 
         active = list(range(len(keys)))
         dist = new_dist

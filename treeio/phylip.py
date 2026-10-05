@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
 #
 # Copyright © 2020 Ye Chang <yech1990@gmail.com>
 # Distributed under terms of the MIT license.
@@ -23,10 +21,9 @@ Examples
 from __future__ import annotations
 
 import re
-from typing import List
 
-from .tree import Tree
 from .newick import read_newicks, write_newick
+from .tree import Tree
 
 # ``<ntax> <ntrees>`` optional header
 _HEADER_RE = re.compile(r"^\s*\d+\s+\d+\s*$")
@@ -51,7 +48,7 @@ def read_phylip(phylip_string: str) -> Tree:
     return trees[0]
 
 
-def read_phylips(phylip_string: str) -> List[Tree]:
+def read_phylips(phylip_string: str) -> list[Tree]:
     """Read every tree in a PHYLIP string."""
     body = _strip_header(phylip_string)
     return read_newicks(body)

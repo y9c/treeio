@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
 #
 # Copyright © 2020 Ye Chang <yech1990@gmail.com>
 # Distributed under terms of the MIT license.
@@ -42,7 +40,7 @@ Or parse one directly from a newick string::
 
 from __future__ import annotations
 
-from typing import Dict, Iterable, Iterator, List, Optional, Sequence, Union
+from collections.abc import Iterable, Iterator, Sequence
 
 
 class Tree:
@@ -59,8 +57,15 @@ class Tree:
     # first-class slots (``__slots__`` keeps per-node memory small); arbitrary
     # annotation attributes are consolidated into a single lazy ``_annotations``
     # dict instead of scattering extra keys into each node's ``__dict__``.
-    __slots__ = ("name", "branch_length", "support", "_parent", "_children",
-                 "_annotations", "__weakref__")
+    __slots__ = (
+        "__weakref__",
+        "_annotations",
+        "_children",
+        "_parent",
+        "branch_length",
+        "name",
+        "support",
+    )
 
     # slots that are treated as first-class attributes.
     _SLOTS = ("name", "branch_length", "support", "_parent", "_children")
@@ -108,11 +113,10 @@ class Tree:
             return ann[name]
         raise AttributeError(name)
 
-
     # ---------------------------------------------------------------- ---
     # iteration / string
     # ---------------------------------------------------------------- ---
-    def __iter__(self) -> Iterator["Tree"]:
+    def __iter__(self) -> Iterator[Tree]:
         """Iterate over all descendant nodes (post-order), self last."""
         stack = [(self, False)]
         while stack:
@@ -157,7 +161,11 @@ class Tree:
         stack = [(self, other)]
         while stack:
             a, b = stack.pop()
-            if a.name != b.name or a.branch_length != b.branch_length or a.support != b.support:
+            if (
+                a.name != b.name
+                or a.branch_length != b.branch_length
+                or a.support != b.support
+            ):
                 return False
             if len(a._children) != len(b._children):
                 return False
@@ -171,12 +179,12 @@ class Tree:
     # parent / children
     # ---------------------------------------------------------------- ---
     @property
-    def parent(self) -> Optional["Tree"]:
+    def parent(self) -> Tree | None:
         """Get the parent of tree node."""
         return self._parent
 
     @parent.setter
-    def parent(self, value: Optional["Tree"]) -> None:
+    def parent(self, value: Tree | None) -> None:
         if value is None:
             self._detach_from_parent()
             return
@@ -187,7 +195,7 @@ class Tree:
             if not any(c is self for c in value._children):
                 value._children.append(self)
         else:
-            raise ValueError("parent must be a Tree or None")
+            raise TypeError("parent must be a Tree or None")
 
     @parent.deleter
     def parent(self) -> None:
@@ -201,15 +209,17 @@ class Tree:
             p._children = [c for c in p._children if c is not self]
 
     @property
-    def children(self) -> "_ChildrenView":
+    def children(self) -> _ChildrenView:
         """Read-only view of the children (use :meth:`append_child` to mutate)."""
         return _ChildrenView(self._children)
 
     @children.setter
-    def children(self, value: Iterable["Tree"]) -> None:
-        if hasattr(value, "__iter__") and all(
-            isinstance(n, type(self)) for n in value
-        ):
+    def children(self, value: Iterable[Tree]) -> None:
+        if hasattr(value, "__iter__") and all(isinstance(n, type(self)) for n in value):
+            # Detach any previously-attached children that are being replaced so
+            # their stale ``_parent`` pointers do not linger.
+            for old in self._children:
+                old._parent = None
             self._children = []
             for node in value:
                 self.append_child(node)
@@ -222,7 +232,7 @@ class Tree:
             c._parent = None
         self._children = []
 
-    def append_child(self, tree: "Tree"):
+    def append_child(self, tree: Tree):
         """Add a child node (detaching it from any previous parent)."""
         if tree is self:
             raise ValueError("cannot attach a node to itself")
@@ -234,13 +244,13 @@ class Tree:
         self._children.append(tree)
         return self
 
-    def extend_children(self, tree: Iterable["Tree"]):
+    def extend_children(self, tree: Iterable[Tree]):
         """Add several children and return self."""
         for t in tree:
             self.append_child(t)
         return self
 
-    def remove_child(self, tree: "Tree"):
+    def remove_child(self, tree: Tree):
         """Detach ``tree`` from ``self``.
 
         Raises ``ValueError`` if ``tree`` is not a direct child of ``self``.
@@ -251,7 +261,7 @@ class Tree:
         self._children = [c for c in self._children if c is not tree]
         return self
 
-    def isolated(self) -> "Tree":
+    def isolated(self) -> Tree:
         """Isolate tree, turn into root node."""
         self._detach_from_parent()
         return self
@@ -283,55 +293,56 @@ class Tree:
     is_bifurcating = is_binary
 
     def is_rooted(self) -> bool:
-        """Return ``True`` (a Tree is always rooted in this model).
+        """Return whether this tree is rooted.
 
-        Unrooted trees are represented with a degree-3 root node; helpers
-        like :meth:`unroot` produce that representation.
+        Trees default to rooted ``True``.  :meth:`unroot` and the PhyloXML
+        reader (via its ``rooted`` attribute) record an unrooted state in the
+        ``_is_rooted`` annotation, which is reflected here.
         """
-        return True
+        return getattr(self, "_is_rooted", True)
 
-    def get_tips(self) -> List["Tree"]:
+    def get_tips(self) -> list[Tree]:
         """Return leaf nodes (terminal taxa) in depth-first order."""
         return [n for n in self if n.is_leaf()]
 
     get_leaves = get_tips
 
-    def get_internal_nodes(self) -> List["Tree"]:
+    def get_internal_nodes(self) -> list[Tree]:
         """Return all non-terminal nodes in depth-first order."""
         return [n for n in self if n.is_internal()]
 
-    def get_nodes(self) -> List["Tree"]:
+    def get_nodes(self) -> list[Tree]:
         """Return all nodes in depth-first (post-order) order."""
         return list(self)
 
-    def get_names(self) -> List[str]:
+    def get_names(self) -> list[str]:
         """Return the names of every node in post-order."""
         return [n.name for n in self]
 
-    def get_tip_names(self) -> List[str]:
+    def get_tip_names(self) -> list[str]:
         """Return tip labels in the order they appear (depth-first)."""
         return [n.name for n in self.get_tips()]
 
     @property
-    def tips(self) -> List["Tree"]:
+    def tips(self) -> list[Tree]:
         return self.get_tips()
 
     @property
-    def tip_name2node(self) -> Dict[str, "Tree"]:
+    def tip_name2node(self) -> dict[str, Tree]:
         return {n.name: n for n in self.get_tips()}
 
     @property
-    def tip_names(self) -> List[str]:
+    def tip_names(self) -> list[str]:
         """Tip labels in depth-first order."""
         return self.get_tip_names()
 
     @property
-    def node_names(self) -> List[str]:
+    def node_names(self) -> list[str]:
         """All node labels in post-order."""
         return [n.name for n in self]
 
     @property
-    def node_index(self) -> Dict[str, int]:
+    def node_index(self) -> dict[str, int]:
         """Map node name -> 0-based post-order index."""
         return {n.name: i for i, n in enumerate(self)}
 
@@ -385,7 +396,7 @@ class Tree:
     # ---------------------------------------------------------------- ---
     # traversal (iterators)
     # ---------------------------------------------------------------- ---
-    def traverse(self, order: str = "preorder") -> Iterator["Tree"]:
+    def traverse(self, order: str = "preorder") -> Iterator[Tree]:
         """Iterate over descendant nodes.
 
         order: one of ``'preorder'``, ``'postorder'``, ``'levelorder'``.
@@ -421,7 +432,7 @@ class Tree:
         else:
             raise ValueError(f"unknown order {order!r}")
 
-    def is_ancestor_of(self, node: "Tree") -> bool:
+    def is_ancestor_of(self, node: Tree) -> bool:
         """Return ``True`` if ``node`` is ``self`` or a descendant of ``self``."""
         cur = node
         while cur is not None:
@@ -430,41 +441,41 @@ class Tree:
             cur = cur._parent
         return False
 
-    def walk(self, order: str = "preorder") -> Iterator["Tree"]:
+    def walk(self, order: str = "preorder") -> Iterator[Tree]:
         """Alias of :meth:`traverse`."""
         return self.traverse(order)
 
     # ---------------------------------------------------------------- ---
     # search / ancestry
     # ---------------------------------------------------------------- ---
-    def label_index(self) -> Dict[str, "Tree"]:
+    def label_index(self) -> dict[str, Tree]:
         """Build ``{node_name: node}`` (first occurrence wins) in one pass.
 
         Use this for bulk label lookups (e.g. data attachment) instead of
         calling :meth:`get_node_by_label` repeatedly.
         """
-        index: Dict[str, "Tree"] = {}
+        index: dict[str, Tree] = {}
         for node in self.traverse("preorder"):
             name = node.name
             if name not in index:
                 index[name] = node
         return index
 
-    def get_node_by_label(self, name: str) -> Optional["Tree"]:
+    def get_node_by_label(self, name: str) -> Tree | None:
         """Return the (first) node whose ``name`` equals ``name``."""
         for n in self:
             if n.name == name:
                 return n
         return None
 
-    def get_tip_by_label(self, name: str) -> Optional["Tree"]:
+    def get_tip_by_label(self, name: str) -> Tree | None:
         """Return the tip whose label equals ``name``."""
         for n in self.get_tips():
             if n.name == name:
                 return n
         return None
 
-    def get_ancestors(self, node: "Tree") -> List["Tree"]:
+    def get_ancestors(self, node: Tree) -> list[Tree]:
         """Return the chain of ancestors from ``node`` up to the root."""
         out, cur = [], node
         while cur is not None and cur is not self:
@@ -474,7 +485,7 @@ class Tree:
             out.append(self)
         return out
 
-    def get_ancestors_of(self, node: "Tree") -> List["Tree"]:
+    def get_ancestors_of(self, node: Tree) -> list[Tree]:
         """Alias of :meth:`get_ancestors` (own ancestors, not including node)."""
         out, cur = [], node.parent
         while cur is not None:
@@ -482,15 +493,15 @@ class Tree:
             cur = cur.parent
         return out
 
-    def get_descendants(self, node: "Tree") -> List["Tree"]:
+    def get_descendants(self, node: Tree) -> list[Tree]:
         """Return all strict descendants of ``node`` (excluding ``node``)."""
         return [n for n in node if n is not node]
 
-    def get_nodes_below(self, node: "Tree") -> List["Tree"]:
+    def get_nodes_below(self, node: Tree) -> list[Tree]:
         """Return the clade rooted at ``node`` (including it)."""
         return list(node)
 
-    def get_common_ancestor(self, node1: "Tree", node2: "Tree") -> Optional["Tree"]:
+    def get_common_ancestor(self, node1: Tree, node2: Tree) -> Tree | None:
         """Return the most recent common ancestor of two nodes."""
         anc1 = set(self._ancestor_set(node1))
         cur = node2
@@ -500,14 +511,13 @@ class Tree:
             cur = cur.parent
         return None
 
-    def get_mrca(self, *nodes) -> Optional["Tree"]:
+    def get_mrca(self, *nodes) -> Tree | None:
         """Return the most recent common ancestor of a set of nodes.
 
         Accepts ``Tree`` nodes or names (strings).
         """
         resolved = [
-            n if isinstance(n, Tree) else self.get_node_by_label(n)
-            for n in nodes
+            n if isinstance(n, Tree) else self.get_node_by_label(n) for n in nodes
         ]
         if not resolved or any(n is None for n in resolved):
             return None
@@ -519,7 +529,7 @@ class Tree:
     # "mrca" as a method alias, following toytree/ete3 naming
     mrca = get_mrca
 
-    def _ancestor_set(self, node: "Tree") -> List["Tree"]:
+    def _ancestor_set(self, node: Tree) -> list[Tree]:
         out = []
         cur = node
         while cur is not None:
@@ -530,14 +540,14 @@ class Tree:
     # ---------------------------------------------------------------- ---
     # distances
     # ---------------------------------------------------------------- ---
-    def get_distance(self, node1: "Tree", node2: "Tree") -> float:
+    def get_distance(self, node1: Tree, node2: Tree) -> float:
         """Return the patristic distance between two nodes.
 
         Branch lengths are summed along the path; missing (``None``) branch
         lengths are treated as 0.
         """
         if not isinstance(node1, Tree) or not isinstance(node2, Tree):
-            raise ValueError("get_distance expects Tree nodes")
+            raise TypeError("get_distance expects Tree nodes")
 
         anc1 = set(self._ancestor_set(node1))
         cur = node2
@@ -561,7 +571,7 @@ class Tree:
             cur = cur.parent
         return d
 
-    def get_cophenetic_distance(self) -> List[List[float]]:
+    def get_cophenetic_distance(self) -> list[list[float]]:
         """Return the pairwise patristic distance matrix for all tips."""
         tips = self.get_tips()
         n = len(tips)
@@ -572,7 +582,7 @@ class Tree:
                 mat[i][j] = mat[j][i] = d
         return mat
 
-    def get_depth_to_root(self, node: "Tree") -> float:
+    def get_depth_to_root(self, node: Tree) -> float:
         """Distance from ``node`` up to the root."""
         return self.get_distance(node, self)
 
@@ -580,12 +590,12 @@ class Tree:
         """Sum of all branch lengths in the (sub)tree."""
         return sum(self._dist(n) for n in self if n.parent is not None)
 
-    def get_edge_lengths(self) -> List[float]:
+    def get_edge_lengths(self) -> list[float]:
         """Return the branch length of every non-root node (post-order)."""
         return [self._dist(n) for n in self if n.parent is not None]
 
     @staticmethod
-    def _dist(node: "Tree") -> float:
+    def _dist(node: Tree) -> float:
         d = node.branch_length
         return 0.0 if d is None else float(d)
 
@@ -615,15 +625,15 @@ class Tree:
         """Set an annotation value."""
         setattr(self, key, value)
 
-    def get_tipdata(self, key: str, default=None) -> Dict[str, object]:
+    def get_tipdata(self, key: str, default=None) -> dict[str, object]:
         """Return ``{tip_name: value}`` for a tip-level annotation."""
         return {n.name: n.get_data(key, default) for n in self.get_tips()}
 
-    def get_nodedata(self, key: str, default=None) -> Dict[str, object]:
+    def get_nodedata(self, key: str, default=None) -> dict[str, object]:
         """Return ``{node_name: value}`` for an internal-node annotation."""
         return {n.name: n.get_data(key, default) for n in self.get_internal_nodes()}
 
-    def set_nodedata(self, mapping: Dict[str, object]) -> None:
+    def set_nodedata(self, mapping: dict[str, object]) -> None:
         """Set a per-node annotation from ``{node_name: value}``."""
         for name, value in mapping.items():
             node = self.get_node_by_label(name)
@@ -631,9 +641,111 @@ class Tree:
                 node.set_data(name, value)
 
     # ---------------------------------------------------------------- ---
+    # feature / data columns (toytree-style)
+    # ---------------------------------------------------------------- ---
+    @property
+    def features(self) -> list[str]:
+        """Sorted list of per-node data features (annotation columns)."""
+        keys = set()
+        for node in self.traverse("preorder"):
+            ann = node._annotations
+            if ann:
+                keys.update(ann)
+        return sorted(k for k in keys if not k.startswith("_"))
+
+    def set_feature(self, name: str, values) -> Tree:
+        """Attach a per-node feature ``name``.
+
+        ``values`` may be a ``{node_label: value}`` dict, a list aligned to
+        post-order nodes, or a scalar applied to every node.
+        """
+        if isinstance(values, dict):
+            for label, value in values.items():
+                node = self.get_node_by_label(str(label))
+                if node is not None:
+                    node.set_data(name, value)
+        elif isinstance(values, (list, tuple)):
+            for node, value in zip(self.traverse("postorder"), values):
+                node.set_data(name, value)
+        else:
+            for node in self:
+                node.set_data(name, values)
+        return self
+
+    def get_feature(self, name: str, default=None) -> dict[str, object]:
+        """Return ``{node_label: value}`` for a feature (post-order)."""
+        return {n.name: n.get_data(name, default) for n in self}
+
+    def feature_map(self, *names: str) -> dict[str, list]:
+        """Return ``{feature: [values aligned to post-order nodes]}``."""
+        names = names or self.features
+        nodes = list(self)
+        return {name: [n.get_data(name) for n in nodes] for name in names}
+
+    def get_node_data(self, name: str, default=None) -> list:
+        """Return the values of ``name`` aligned to post-order nodes."""
+        return [n.get_data(name, default) for n in self]
+
+    # ---------------------------------------------------------------- ---
+    # ergonomic access
+    # ---------------------------------------------------------------- ---
+    def __getitem__(self, i):
+        """Convenient node access: name, index, slice, or list of names."""
+        if isinstance(i, str):
+            node = self.get_node_by_label(i)
+            if node is None:
+                raise KeyError(i)
+            return node
+        if isinstance(i, slice):
+            return list(self.traverse("postorder"))[i]
+        if isinstance(i, (list, tuple, set)):
+            out = []
+            for name in i:
+                node = self.get_node_by_label(str(name))
+                if node is None:
+                    raise KeyError(name)
+                out.append(node)
+            return out
+        nodes = list(self.traverse("postorder"))
+        try:
+            return nodes[i]
+        except IndexError as e:
+            raise IndexError(f"node index {i} out of range ({len(nodes)} nodes)") from e
+
+    def get_tip_labels(self) -> list[str]:
+        """Alias of :attr:`tip_names` (list of tip labels)."""
+        return self.get_tip_names()
+
+    def get_support_values(self) -> list[float]:
+        """Support / bootstrap values of internal nodes (None dropped)."""
+        return [n.support for n in self.get_internal_nodes() if n.support is not None]
+
+    def clades(self, *names) -> Tree | None:
+        """Return the MRCA node of ``names`` (alias of :meth:`get_mrca`)."""
+        return self.get_mrca(*names)
+
+    def get_tip_indices(self) -> dict[str, int]:
+        """Return ``{tip_name: 0-based tip index}``."""
+        return {t.name: i for i, t in enumerate(self.get_tips())}
+
+    def get_node_indices(self) -> dict[Tree, int]:
+        """Return ``{node: 0-based post-order index}``."""
+        return {n: i for i, n in enumerate(self)}
+
+    def get_index_map(self) -> dict[str, int]:
+        """Return ``{node_label: post-order index}``."""
+        return {n.name: i for i, n in enumerate(self)}
+
+    def write(self, *args, **kwargs) -> str | None:
+        """Serialize this tree (see :func:`treeio.write`)."""
+        from .io import write as _write
+
+        return _write(self, *args, **kwargs)
+
+    # ---------------------------------------------------------------- ---
     # topology manipulation
     # ---------------------------------------------------------------- ---
-    def ladderize(self, reverse: bool = False) -> "Tree":
+    def ladderize(self, reverse: bool = False) -> Tree:
         """Reorder children so the tree is 'laddered' (sorted by clade size).
 
         Mutates the tree in place and returns ``self``.
@@ -650,7 +762,7 @@ class Tree:
             reverse=reverse,
         )
 
-    def rotate(self, node: "Tree" = None) -> "Tree":
+    def rotate(self, node: Tree = None) -> Tree:
         """Rotate (reverse the order of) a node's children in place.
 
         If ``node`` is ``None`` the root's children are rotated.  Returns self.
@@ -660,7 +772,7 @@ class Tree:
         node.children = list(reversed(node.children))
         return self
 
-    def root(self, outgroup: Union["Tree", str, Sequence] = None) -> "Tree":
+    def root(self, outgroup: Tree | str | Sequence = None) -> Tree:
         """Re-root the tree so ``outgroup`` is a basal (direct child) clade.
 
         ``outgroup`` may be a :class:`Tree` node, a single tip name, or a
@@ -672,14 +784,22 @@ class Tree:
         out = self._resolve_clade(outgroup)
         if out is None:
             raise ValueError("outgroup not found in tree")
+        if out is self:
+            return self
 
         # walk the path out -> root, collecting every sibling clade encountered
         pieces = []
+        # The internal path nodes (between ``out`` and the root) are dropped and
+        # replaced by a single ``rest`` subtree; carry the edge lengths of those
+        # path nodes forward so the total tree length is preserved.
+        path_edge = 0.0
         node = out
         while node.parent is not None:
             p = node.parent
             p._children = [c for c in p._children if c is not node]
             pieces.extend(c for c in p.children if c is not node)
+            if node is not out and node is not self:
+                path_edge += self._dist(node)
             node = p
             if node is self:
                 break
@@ -687,8 +807,10 @@ class Tree:
         # reconnect the remaining clades under a single "rest" subtree
         if len(pieces) == 1:
             rest = pieces[0]
+            if path_edge:
+                rest.branch_length = self._dist(rest) + path_edge
         elif len(pieces) > 1:
-            rest = Tree("internal", branch_length=0.0)
+            rest = Tree("internal", branch_length=path_edge)
             rest.children = pieces
         else:
             rest = None
@@ -699,7 +821,7 @@ class Tree:
             self.children = [out, rest]
         return self
 
-    def _resolve_clade(self, outgroup) -> Optional["Tree"]:
+    def _resolve_clade(self, outgroup) -> Tree | None:
         """Resolve an outgroup spec into a node.
 
         Accepts a :class:`Tree`, a tip/name string, or a sequence of names.
@@ -707,19 +829,21 @@ class Tree:
         if isinstance(outgroup, Tree):
             return outgroup
         if isinstance(outgroup, str):
-            return self.get_tip_by_label(outgroup) or self.get_node_by_label(
-                outgroup
-            )
+            return self.get_tip_by_label(outgroup) or self.get_node_by_label(outgroup)
         if isinstance(outgroup, (list, tuple, set)):
             return self.get_mrca(*list(outgroup))
         return None
 
-    def unroot(self) -> "Tree":
-        """Collapse the root into a single (possibly polytomous) network node.
+    def unroot(self) -> Tree:
+        """Mark the tree as unrooted and collapse a degree-2 root.
 
-        Branch lengths on the two root edges are averaged so overall tree
-        length is preserved.  Returns self.
+        A root with exactly two children is contracted so the root carries a
+        degree-3-ish polytomy; the branch lengths on the two former root edges
+        are averaged onto the surviving edges so the overall tree length is
+        preserved.  The rooted state is recorded (``is_rooted()`` then reports
+        ``False``).  Returns self.
         """
+        self._is_rooted = False
         if len(self.children) == 2:
             c1, c2 = self.children
             new_dist = (self._dist(c1) + self._dist(c2)) / 2.0
@@ -727,7 +851,7 @@ class Tree:
             c2.branch_length = new_dist
         return self
 
-    def drop_tips(self, names: Iterable[str]) -> "Tree":
+    def drop_tips(self, names: Iterable[str]) -> Tree:
         """Remove tips whose name is in ``names`` and prune emptied clades.
 
         Mutates and returns ``self``.
@@ -747,7 +871,10 @@ class Tree:
         """Keep only descendants that lead to a tip in ``keptset``."""
         if self.is_leaf():
             return
+        dropped = [c for c in self._children if not c._has_kept(keptset)]
         self._children = [c for c in self._children if c._has_kept(keptset)]
+        for c in dropped:
+            c._parent = None
         for c in self._children:
             c._parent = self
             c._prune_to(keptset)
@@ -784,24 +911,24 @@ class Tree:
         for c in self._children:
             c._splice_single_child()
 
-    def prune(self, names: Iterable[str]) -> "Tree":
+    def prune(self, names: Iterable[str]) -> Tree:
         """Keep only the tips named in ``names``; everything else is dropped.
 
         Mutates and returns ``self``.
         """
-        return self.drop_tips(
-            set(self.get_tip_names()) - set(names)
-        )
+        return self.drop_tips(set(self.get_tip_names()) - set(names))
 
-    def collapse(self, node: "Tree") -> "Tree":
+    def collapse(self, node: Tree) -> Tree:
         """Collapse the clade under ``node`` into a single node.
 
         ``node`` becomes a tip while keeping its name/support.  Returns self.
         """
+        for c in node._children:
+            c._parent = None
         node._children = []
         return self
 
-    def resolve_polytomies(self) -> "Tree":
+    def resolve_polytomies(self) -> Tree:
         """Insert (dummy, length-0) internal nodes to make the tree
         bifurcating.  Mutates and returns ``self``.
         """
@@ -823,7 +950,7 @@ class Tree:
             tail._parent = self
         return self
 
-    def get_dummy_polytomy(self) -> "Tree":
+    def get_dummy_polytomy(self) -> Tree:
         """Return a copy of the tree's root polytomy resolved to a dummy node."""
         copy = self.copy()
         root = copy
@@ -840,7 +967,7 @@ class Tree:
     # ---------------------------------------------------------------- ---
     # copy / export
     # ---------------------------------------------------------------- ---
-    def copy(self, deep: bool = True) -> "Tree":
+    def copy(self, deep: bool = True) -> Tree:
         """Independent deep copy of the subtree rooted at self."""
         new = Tree()
         # iterative clone (copes with very deep trees without recursion)
@@ -862,11 +989,11 @@ class Tree:
                 stack.append((child, nc))
         return new
 
-    def clone(self) -> "Tree":
+    def clone(self) -> Tree:
         """Alias of :meth:`copy`."""
         return self.copy()
 
-    def get_subtree(self, node: "Tree") -> "Tree":
+    def get_subtree(self, node: Tree) -> Tree:
         """Return a copy of the clade rooted at ``node``."""
         return node.copy()
 
@@ -911,19 +1038,19 @@ class Tree:
     # ---------------------------------------------------------------- ---
     # misc
     # ---------------------------------------------------------------- ---
-    def get_node2index(self) -> Dict["Tree", int]:
+    def get_node2index(self) -> dict[Tree, int]:
         """Map every node to a 0-based index in post-order."""
         return {n: i for i, n in enumerate(self)}
 
-    def get_index2node(self) -> List["Tree"]:
+    def get_index2node(self) -> list[Tree]:
         return list(self)
 
-    def edge_vector(self) -> List[tuple]:
+    def edge_vector(self) -> list[tuple]:
         """Return list of ``(parent_index, child_index)`` in post-order."""
         idx = self.get_node2index()
         return [(idx[n._parent], idx[n]) for n in self if n._parent is not None]
 
-    def to_table(self, layout: str = "rectangular") -> List[dict]:
+    def to_table(self, layout: str = "rectangular") -> list[dict]:
         """Return the tree as a list of node records (a data-frame style table).
 
         Each row describes one node with ``id``, ``parent``, ``label``,
@@ -939,12 +1066,21 @@ class Tree:
 
         return write_newick(self, *args, **kwargs)
 
-    def save(self, path: str, layout: str = "rectangular", dpi: int = 300,
-             format: str = None, tight: bool = True, **kwargs):
+    def save(
+        self,
+        path: str,
+        layout: str = "rectangular",
+        dpi: int = 300,
+        format: str | None = None,
+        tight: bool = True,
+        **kwargs,
+    ):
         """Draw this tree and save a publication-ready figure to ``path``."""
         from .plot import save as _save
 
-        return _save(self, path, layout=layout, dpi=dpi, format=format, tight=tight, **kwargs)
+        return _save(
+            self, path, layout=layout, dpi=dpi, format=format, tight=tight, **kwargs
+        )
 
     def render(self, backend: str = "mpl", layout: str = "rectangular", **kwargs):
         """Render this tree with the chosen backend.
@@ -957,7 +1093,7 @@ class Tree:
         return _render(self, backend=backend, layout=layout, **kwargs)
 
     @classmethod
-    def from_alignment(cls, sequences, model: str = "p", rooted: bool = True) -> "Tree":
+    def from_alignment(cls, sequences, model: str = "p", rooted: bool = True) -> Tree:
         """Build a Tree from an alignment via distance + neighbour joining.
 
         ``sequences`` may be a ``{name: sequence}`` dict, iterable of
@@ -979,7 +1115,11 @@ class Tree:
         fields can be requested via keyword ``name->attr``, e.g.
         ``as_dict(rate="rate")``.
         """
-        field_map = {"name": "name", "branch_length": "branch_length", "support": "support"}
+        field_map = {
+            "name": "name",
+            "branch_length": "branch_length",
+            "support": "support",
+        }
         field_map.update(fields)
 
         def make(node):
@@ -1003,7 +1143,7 @@ class Tree:
         return root
 
 
-def fortify(tree: Tree, layout: str = "rectangular") -> List[dict]:
+def fortify(tree: Tree, layout: str = "rectangular") -> list[dict]:
     """Return the tree as a list of node records (a data-frame style table).
 
     Columns
@@ -1018,8 +1158,7 @@ def fortify(tree: Tree, layout: str = "rectangular") -> List[dict]:
     # compute x/y coordinates (rectangular layout by default)
     tree.get_y_and_x(x_as_branch=True)
     index = tree.get_node2index()
-    columns = ["id", "parent", "label", "is_tip", "branch_length", "support", "x", "y"]
-    rows: List[dict] = []
+    rows: list[dict] = []
     for node in tree.traverse("postorder"):
         row = {
             "id": index[node],
@@ -1042,8 +1181,7 @@ def fortify(tree: Tree, layout: str = "rectangular") -> List[dict]:
 def _iter_attrs(node):
     ann = node._annotations
     if ann:
-        for key, value in ann.items():
-            yield key, value
+        yield from ann.items()
 
 
 def _copy_attrs(src, dst):
@@ -1057,6 +1195,7 @@ class _ChildrenView:
     Prevents accidental mutation (``tree.children.append(x)``) that would
     corrupt the parent/child invariants; use :meth:`Tree.append_child`.
     """
+
     __slots__ = ("_lst",)
 
     def __init__(self, lst):

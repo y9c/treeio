@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
 #
 # Copyright © 2020 Ye Chang <yech1990@gmail.com>
 # Distributed under terms of the MIT license.
@@ -29,8 +27,8 @@ Examples
 
 from __future__ import annotations
 
+import math
 import xml.etree.ElementTree as ET
-from typing import List
 
 from .tree import Tree
 
@@ -43,14 +41,20 @@ def read_phyloxml(xml_string: str) -> Tree:
     return trees[0]
 
 
-def read_phyloxmls(xml_string: str) -> List[Tree]:
+def read_phyloxmls(xml_string: str) -> list[Tree]:
     """Read every ``<phylogeny>`` element into a list of Trees."""
     root = ET.fromstring(xml_string)
     trees = []
     for phylo in root.iter():
         tag = _local(phylo.tag)
         if tag == "phylogeny":
-            t = _parse_clade(phylo)
+            # The ``<phylogeny>`` element wraps exactly one real ``<clade>``;
+            # parse that child directly rather than the wrapper element itself,
+            # otherwise a spurious anonymous root node would be injected.
+            clade = next((c for c in phylo if _local(c.tag) == "clade"), None)
+            if clade is None:
+                continue
+            t = _parse_clade(clade)
             t._is_rooted = phylo.get("rooted", "false").lower() == "true"
             trees.append(t)
     return trees
@@ -94,7 +98,10 @@ def _cast_scalar(text):
 
 
 def write_phyloxml(
-    tree: Tree, rooted: bool = True, name: str = None, properties: List[str] = None
+    tree: Tree,
+    rooted: bool = True,
+    name: str | None = None,
+    properties: list[str] | None = None,
 ) -> str:
     """Write a Tree as a PhyloXML document string."""
     phylo = ET.Element("phylogeny")
@@ -109,7 +116,7 @@ def write_phyloxml(
     return ET.tostring(root, encoding="unicode") + "\n"
 
 
-def _clade_elem(node: Tree, properties: List[str]) -> ET.Element:
+def _clade_elem(node: Tree, properties: list[str]) -> ET.Element:
     clade = ET.Element("clade")
     if node.name:
         name = ET.SubElement(clade, "name")
@@ -146,6 +153,8 @@ def _to_float(text):
 
 def _fmt(x) -> str:
     f = float(x)
+    if not math.isfinite(f):
+        return str(f)
     return str(int(f)) if f == int(f) else repr(f)
 
 

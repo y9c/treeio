@@ -11,16 +11,24 @@ Covers:
 """
 
 import matplotlib
+
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
 import math
 import random
 from pathlib import Path
 
+import matplotlib.patches as mpatches
+import matplotlib.pyplot as plt
+
 from treeio import (
-    Tree, attach, draw_tree, highlight_clade, add_ring, add_rings, gheatmap,
-    tree_coords, named_palette,
+    Tree,
+    add_ring,
+    attach,
+    draw_tree,
+    gheatmap,
+    highlight_clade,
+    named_palette,
+    tree_coords,
 )
 
 OUT = Path(__file__).parent / "gallery"
@@ -70,17 +78,32 @@ def make_layout_gallery():
 
 def make_trait():
     t = build(46)
-    attach(t, {tip.name: round(random.uniform(3.5, 5.0), 2) for tip in t.get_tips()},
-           key="trait")
+    attach(
+        t,
+        {tip.name: round(random.uniform(3.5, 5.0), 2) for tip in t.get_tips()},
+        key="trait",
+    )
     fig, axes = plt.subplots(1, 2, figsize=(14, 7))
     for ax in axes:
-        draw_tree(t, ax=ax, layout="fan", tip_labels=True, tip_points=True,
-                  tip_color_field="trait", cmap="turbo", show_tip_legend=False)
+        draw_tree(
+            t,
+            ax=ax,
+            layout="fan",
+            tip_labels=True,
+            tip_points=True,
+            tip_color_field="trait",
+            cmap="turbo",
+            show_tip_legend=False,
+        )
         tidy(ax, polar=True)
     import matplotlib
+
     mappable = matplotlib.cm.ScalarMappable(
-        norm=matplotlib.colors.Normalize(3.5, 5.0), cmap=matplotlib.colormaps["turbo"])
-    fig.colorbar(mappable, ax=axes[0], fraction=0.03, pad=0.04).set_label("trait", fontsize=9)
+        norm=matplotlib.colors.Normalize(3.5, 5.0), cmap=matplotlib.colormaps["turbo"]
+    )
+    fig.colorbar(mappable, ax=axes[0], fraction=0.03, pad=0.04).set_label(
+        "trait", fontsize=9
+    )
     for i, ax in enumerate(axes):
         ax.set_title(chr(65 + i), loc="left", fontsize=13)
     fig.savefig(OUT / "02_trait.png", dpi=110, bbox_inches="tight")
@@ -114,26 +137,62 @@ def make_highlight():
 
 def make_rings():
     t = build(72)
-    attach(t, {tip.name: round(math.sin(i / 5.0) * 1.8, 2)
-               for i, tip in enumerate(t.get_tips())}, key="continuous")
+    attach(
+        t,
+        {
+            tip.name: round(math.sin(i / 5.0) * 1.8, 2)
+            for i, tip in enumerate(t.get_tips())
+        },
+        key="continuous",
+    )
     letters = "abcdefgh"
-    attach(t, {tip.name: letters[i % 8] for i, tip in enumerate(t.get_tips())}, key="d1")
-    attach(t, {tip.name: letters[(i + 3) % 8] for i, tip in enumerate(t.get_tips())}, key="d2")
+    attach(
+        t, {tip.name: letters[i % 8] for i, tip in enumerate(t.get_tips())}, key="d1"
+    )
+    attach(
+        t,
+        {tip.name: letters[(i + 3) % 8] for i, tip in enumerate(t.get_tips())},
+        key="d2",
+    )
     fig, ax = plt.subplots(figsize=(10, 9))
     draw_tree(t, ax=ax, layout="circular", tip_labels=False, tip_points=False)
     add_ring(t, "continuous", ax=ax, cmap="magma", ring_width=0.06, pad=0.02)
     add_ring(t, "continuous", ax=ax, cmap="magma", ring_width=0.06)
-    add_ring(t, "d1", ax=ax, discrete=True, palette=named_palette(list(letters)), ring_width=0.06)
-    add_ring(t, "d2", ax=ax, discrete=True, palette=named_palette(list(letters)), ring_width=0.06)
+    add_ring(
+        t,
+        "d1",
+        ax=ax,
+        discrete=True,
+        palette=named_palette(list(letters)),
+        ring_width=0.06,
+    )
+    add_ring(
+        t,
+        "d2",
+        ax=ax,
+        discrete=True,
+        palette=named_palette(list(letters)),
+        ring_width=0.06,
+    )
     tidy(ax, polar=True)
     import matplotlib
+
     mappable = matplotlib.cm.ScalarMappable(
-        norm=matplotlib.colors.Normalize(-1.8, 1.8), cmap=matplotlib.colormaps["magma"])
-    fig.colorbar(mappable, ax=ax, fraction=0.03, pad=0.06).set_label("continuous\nvalue", fontsize=9)
+        norm=matplotlib.colors.Normalize(-1.8, 1.8), cmap=matplotlib.colormaps["magma"]
+    )
+    fig.colorbar(mappable, ax=ax, fraction=0.03, pad=0.06).set_label(
+        "continuous\nvalue", fontsize=9
+    )
     pal = named_palette(list(letters))
     handles = [mpatches.Patch(color=pal[k], label=k) for k in letters]
-    ax.legend(handles=handles, title="discrete\nvalue", loc="upper left",
-              bbox_to_anchor=(1.05, 0.98), fontsize=7, title_fontsize=8)
+    ax.legend(
+        handles=handles,
+        title="discrete\nvalue",
+        loc="upper left",
+        bbox_to_anchor=(1.05, 0.98),
+        fontsize=7,
+        title_fontsize=8,
+    )
     fig.savefig(OUT / "04_rings.png", dpi=110, bbox_inches="tight")
     plt.close(fig)
 
@@ -142,8 +201,11 @@ def make_heatmap():
     t = build(26)
     cols = [f"c{i}" for i in range(20)]
     for col in cols:
-        attach(t, {tip.name: round(random.uniform(0, 10), 1) for tip in t.get_tips()},
-               key=col)
+        attach(
+            t,
+            {tip.name: round(random.uniform(0, 10), 1) for tip in t.get_tips()},
+            key=col,
+        )
     fig, ax = plt.subplots(figsize=(14, 8))
     draw_tree(t, ax=ax, layout="rectangular", tip_labels=True, tip_points=False)
     gheatmap(t, cols, ax=ax, layout="rectangular", cmap="magma", tip_labels=False)
@@ -178,12 +240,27 @@ def make_radial():
             grp = "clade C"
         nd.set_data("grp", grp)
     fig, ax = plt.subplots(figsize=(9, 9))
-    draw_tree(t, ax=ax, layout="circular", tip_labels=True, label_size=7,
-              tip_points=False, branch_color_field="grp", edge_width=2.0,
-              node_support=True, label_radial_offset=0.05)
-    highlight_clade(t, ca, ax=ax, layout="circular", fill="#bfe6e6", alpha=0.5, extend_center=True)
-    highlight_clade(t, cb, ax=ax, layout="circular", fill="#f5c6c6", alpha=0.5, extend_center=True)
-    highlight_clade(t, cc, ax=ax, layout="circular", fill="#dae9f2", alpha=0.5, extend_center=True)
+    draw_tree(
+        t,
+        ax=ax,
+        layout="circular",
+        tip_labels=True,
+        label_size=7,
+        tip_points=False,
+        branch_color_field="grp",
+        edge_width=2.0,
+        node_support=True,
+        label_radial_offset=0.05,
+    )
+    highlight_clade(
+        t, ca, ax=ax, layout="circular", fill="#bfe6e6", alpha=0.5, extend_center=True
+    )
+    highlight_clade(
+        t, cb, ax=ax, layout="circular", fill="#f5c6c6", alpha=0.5, extend_center=True
+    )
+    highlight_clade(
+        t, cc, ax=ax, layout="circular", fill="#dae9f2", alpha=0.5, extend_center=True
+    )
     ax.set_axis_off()
     fig.savefig(OUT / "06_radial.png", dpi=110, bbox_inches="tight")
     plt.close(fig)
@@ -195,8 +272,15 @@ def make_symbols():
     cats = ["CG", "GB", "TC", "TG", "Tr", "Tw"]
     attach(t, {tip.name: random.choice(cats) for tip in t.get_tips()}, key="stat")
     fig, ax = plt.subplots(figsize=(12, 8))
-    draw_tree(t, ax=ax, layout="rectangular", tip_labels=True, tip_points=True,
-              tip_color_field="stat", show_tip_legend=True)
+    draw_tree(
+        t,
+        ax=ax,
+        layout="rectangular",
+        tip_labels=True,
+        tip_points=True,
+        tip_color_field="stat",
+        show_tip_legend=True,
+    )
     ax.set_axis_off()
     fig.savefig(OUT / "08_symbols.png", dpi=120, bbox_inches="tight")
     plt.close(fig)
@@ -204,7 +288,7 @@ def make_symbols():
 
 def make_boxed():
     """Collapsed-clade boxed tree (green clade boxes + blue N + rotated Y)."""
-    from treeio import box_label, add_boxed_labels
+    from treeio import add_boxed_labels, box_label
 
     yeast = [Tree(f"ADH{i}", branch_length=1.0) for i in range(1, 5)]
     fungi = Tree("Fungi", branch_length=1.0)
@@ -223,23 +307,54 @@ def make_boxed():
 
     coords = tree_coords(t, layout="rectangular")
     fig, ax = plt.subplots(figsize=(9, 6))
-    draw_tree(t, ax=ax, layout="rectangular", tip_labels=False, tip_points=False, edge_width=1.4)
-    add_boxed_labels(t, {
-        "Fungi": "Fungi",
-        "ADH1": "yeast", "ADH2": "yeast", "ADH3": "yeast", "ADH4": "yeast",
-        "primates": "primates",
-        "hADH1": "human", "hADH2": "human",
-        "ADHX": "insect", "ADHY": "nematode",
-    }, ax=ax, layout="rectangular", fill="#a7d7a7", fontsize=8)
+    draw_tree(
+        t,
+        ax=ax,
+        layout="rectangular",
+        tip_labels=False,
+        tip_points=False,
+        edge_width=1.4,
+    )
+    add_boxed_labels(
+        t,
+        {
+            "Fungi": "Fungi",
+            "ADH1": "yeast",
+            "ADH2": "yeast",
+            "ADH3": "yeast",
+            "ADH4": "yeast",
+            "primates": "primates",
+            "hADH1": "human",
+            "hADH2": "human",
+            "ADHX": "insect",
+            "ADHY": "nematode",
+        },
+        ax=ax,
+        layout="rectangular",
+        fill="#a7d7a7",
+        fontsize=8,
+    )
     for name in ("N", "metazoa"):
         x, y = coords[t.get_node_by_label(name)]
         box_label(ax, x, y, "N", fill="#5b8bd0", textcolor="white", fontsize=8)
     x, y = coords[t.get_node_by_label("Y")]
-    box_label(ax, x, y, "Y", fill="#5b8bd0", textcolor="white", fontsize=8, rotation=90, round=False)
+    box_label(
+        ax,
+        x,
+        y,
+        "Y",
+        fill="#5b8bd0",
+        textcolor="white",
+        fontsize=8,
+        rotation=90,
+        round=False,
+    )
     ax.text(x + 0.4, y, "100", fontsize=8, color="#333333", ha="left", va="center")
     for tip in t.get_tips():
         x, y = coords[tip]
-        ax.text(x + 1.3, y, tip.name, fontsize=8, color="#333333", ha="left", va="center")
+        ax.text(
+            x + 1.3, y, tip.name, fontsize=8, color="#333333", ha="left", va="center"
+        )
     ax.set_axis_off()
     fig.savefig(OUT / "07_boxed.png", dpi=120, bbox_inches="tight")
     plt.close(fig)

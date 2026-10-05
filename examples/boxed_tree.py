@@ -7,10 +7,11 @@ gene names (``ADH1``...).
 """
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from treeio import Tree, draw_tree, box_label, add_boxed_labels, tree_coords
+from treeio import Tree, add_boxed_labels, box_label, draw_tree, tree_coords
 
 
 def gene_tree():
@@ -42,17 +43,28 @@ def main():
     coords = tree_coords(t, layout="rectangular")
 
     fig, ax = plt.subplots(figsize=(9, 6))
-    draw_tree(t, ax=ax, layout="rectangular", tip_labels=False, tip_points=False,
-              edge_width=1.4)
+    draw_tree(
+        t,
+        ax=ax,
+        layout="rectangular",
+        tip_labels=False,
+        tip_points=False,
+        edge_width=1.4,
+    )
 
     GREEN = "#a7d7a7"
     # Boxed collapsed-clade labels drawn at each named node (green).
     boxed = {
         "Fungi": "Fungi",
-        "ADH1": "yeast", "ADH2": "yeast", "ADH3": "yeast", "ADH4": "yeast",
+        "ADH1": "yeast",
+        "ADH2": "yeast",
+        "ADH3": "yeast",
+        "ADH4": "yeast",
         "primates": "primates",
-        "hADH1": "human", "hADH2": "human",
-        "ADHX": "insect", "ADHY": "nematode",
+        "hADH1": "human",
+        "hADH2": "human",
+        "ADHX": "insect",
+        "ADHY": "nematode",
     }
     add_boxed_labels(t, boxed, ax=ax, layout="rectangular", fill=GREEN, fontsize=8)
 
@@ -63,18 +75,32 @@ def main():
 
     # Rotated "Y" branch label + support value at the human clade root.
     x, y = coords[t.get_node_by_label("Y")]
-    box_label(ax, x, y, "Y", fill="#5b8bd0", textcolor="white", fontsize=8,
-              rotation=90, round=False)
+    box_label(
+        ax,
+        x,
+        y,
+        "Y",
+        fill="#5b8bd0",
+        textcolor="white",
+        fontsize=8,
+        rotation=90,
+        round=False,
+    )
     ax.text(x + 0.4, y, "100", fontsize=8, color="#333333", ha="left", va="center")
 
     # Gene names as plain tip text (right of each leaf box, matching the ref).
     for tip in t.get_tips():
         x, y = coords[tip]
-        ax.text(x + 1.3, y, tip.name, fontsize=8, color="#333333", ha="left", va="center")
+        ax.text(
+            x + 1.3, y, tip.name, fontsize=8, color="#333333", ha="left", va="center"
+        )
 
     ax.set_axis_off()
-    fig.savefig("/home/yec/Coding/treeio/examples/gallery/07_boxed.png", dpi=120,
-                bbox_inches="tight")
+    fig.savefig(
+        "/home/yec/Coding/treeio/examples/gallery/07_boxed.png",
+        dpi=120,
+        bbox_inches="tight",
+    )
     plt.close(fig)
     print("wrote examples/gallery/07_boxed.png")
 

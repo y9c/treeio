@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
 #
 # Copyright © 2020 Ye Chang <yech1990@gmail.com>
 # Distributed under terms of the MIT license.
@@ -21,11 +19,11 @@ from __future__ import annotations
 
 import re
 
-from .tree import Tree
-from .nexus import read_nexuses
 from .newick import read_newick
+from .nexus import read_nexuses
+from .tree import Tree
 
-__all__ = ["read_mrbayes", "read_mrbayeses", "read_iqtree", "read_raxml"]
+__all__ = ["read_iqtree", "read_mrbayes", "read_mrbayeses", "read_raxml"]
 
 
 def read_mrbayes(text: str) -> Tree:
@@ -36,7 +34,7 @@ def read_mrbayes(text: str) -> Tree:
     return trees[0]
 
 
-def read_mrbayeses(text: str) -> list:
+def read_mrbayeses(text: str) -> list[Tree]:
     """Read every tree from a MrBayes NEXUS file."""
     trees = read_nexuses(text)
     meta = _mrbayes_block(text)
@@ -48,13 +46,13 @@ def read_mrbayeses(text: str) -> list:
 
 def _mrbayes_block(text: str) -> dict:
     """Capture key MrBayes settings from the ``begin mrbayes`` block."""
-    m = re.search(r"BEGIN\s+MRBAYES;(.*?)END;", text, re.S | re.I)
+    m = re.search(r"BEGIN\s+MRBAYES;(.*?)END;", text, re.DOTALL | re.IGNORECASE)
     if not m:
         return {}
     body = m.group(1)
     out = {}
     for key in ("lset", "prset", "mcmc", "unlink", "outgroup"):
-        km = re.search(r"\b" + key + r"\s+([^;]+);", body, re.I)
+        km = re.search(r"\b" + key + r"\s+([^;]+);", body, re.IGNORECASE)
         if km:
             out[key] = km.group(1).strip()
     return out

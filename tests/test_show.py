@@ -1,13 +1,8 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-
 """Tests for `treeio` package."""
 
 import unittest
 
-from treeio import show
-from treeio import Tree
-from treeio import json_io
+from treeio import Tree, show
 
 
 class TestTreeShow(unittest.TestCase):

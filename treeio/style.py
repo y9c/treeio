@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
 #
 # Copyright © 2020 Ye Chang <yech1990@gmail.com>
 # Distributed under terms of the MIT license.
@@ -10,7 +8,7 @@
 
 from __future__ import annotations
 
-from typing import Dict, Sequence
+from collections.abc import Sequence
 
 from .tree import Tree
 
@@ -23,17 +21,35 @@ __all__ = [
 
 # deterministic colour palettes (used when no mapping is supplied)
 _PALETTE = [
-    "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd",
-    "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf",
-    "#aec7e8", "#ffbb78", "#98df8a", "#ff9896", "#c5b0d5",
+    "#1f77b4",
+    "#ff7f0e",
+    "#2ca02c",
+    "#d62728",
+    "#9467bd",
+    "#8c564b",
+    "#e377c2",
+    "#7f7f7f",
+    "#bcbd22",
+    "#17becf",
+    "#aec7e8",
+    "#ffbb78",
+    "#98df8a",
+    "#ff9896",
+    "#c5b0d5",
 ]
 _VIRIDIS = [
-    "#440154", "#46327e", "#365c8d", "#277f8e", "#1fa187",
-    "#4ac16d", "#a0da39", "#fde725",
+    "#440154",
+    "#46327e",
+    "#365c8d",
+    "#277f8e",
+    "#1fa187",
+    "#4ac16d",
+    "#a0da39",
+    "#fde725",
 ]
 
 
-def color_by_value(values: Dict[str, object]) -> Dict[str, str]:
+def color_by_value(values: dict[str, object]) -> dict[str, str]:
     """Build a deterministic ``{name: hex}`` palette from a value mapping.
 
     Numeric values map to a continuous viridis gradient; categorical values
@@ -57,18 +73,19 @@ def color_by_value(values: Dict[str, object]) -> Dict[str, str]:
     return out
 
 
-def color_map(values: Dict[str, object]) -> Dict[str, str]:
+def color_map(values: dict[str, object]) -> dict[str, str]:
     """Alias of :func:`color_by_value` (trait -> colour)."""
     return color_by_value(values)
 
 
-def named_palette(names: Sequence[str]) -> Dict[str, str]:
+def named_palette(names: Sequence[str]) -> dict[str, str]:
     """Assign a distinct colour to each of ``names``."""
     return {name: _PALETTE[i % len(_PALETTE)] for i, name in enumerate(names)}
 
 
-def suggest_figsize(tree: Tree, layout: str = "rectangular",
-                    base_width: int = 800, tip_slot: int = 14):
+def suggest_figsize(
+    tree: Tree, layout: str = "rectangular", base_width: int = 800, tip_slot: int = 14
+):
     """A sensible canvas size ``(width, height)`` for a tree.
 
     Height scales with the number of tips so points / labels do not overlap;
@@ -77,6 +94,7 @@ def suggest_figsize(tree: Tree, layout: str = "rectangular",
     n = tree.nleaves or 1
     if layout in ("circular", "fan", "radial", "unrooted"):
         import math as _m
+
         side = int(min(max(400, _m.sqrt(n) * base_width / 5.0), 6000))
         return side, side
     height = int(min(max(300, n * tip_slot + 80), 20000))

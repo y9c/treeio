@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
 #
 # Copyright © 2020 Ye Chang <yech1990@gmail.com>
 # Distributed under terms of the MIT license.
@@ -27,14 +25,17 @@ Examples
 from __future__ import annotations
 
 import re
-from typing import List, Optional
 
+from .newick import read_newick
 from .tree import Tree
-from .newick import read_newick, write_newick
 
-_BLOCK_RE = re.compile(r"BEGIN\s+(\w+);(.*?)END;", re.S | re.I)
-_TREE_RE = re.compile(r"TREE\s*\*?\s*([A-Za-z0-9_.-]*)\s*=\s*(.*?);", re.S | re.I)
-_TRANSLATE_RE = re.compile(r"TRANSLATE\b(.*?)(?:;|BEGIN|END)", re.S | re.I)
+_BLOCK_RE = re.compile(r"BEGIN\s+(\w+);(.*?)END;", re.DOTALL | re.IGNORECASE)
+_TREE_RE = re.compile(
+    r"TREE\s*\*?\s*([A-Za-z0-9_.-]*)\s*=\s*(.*?);", re.DOTALL | re.IGNORECASE
+)
+_TRANSLATE_RE = re.compile(
+    r"TRANSLATE\b(.*?)(?:;|BEGIN|END)", re.DOTALL | re.IGNORECASE
+)
 _ENTRY_RE = re.compile(r"(\w+)\s*([^,;]+?)(?=[,;]|$)")
 _NEEDS_QUOTE_RE = re.compile(r"[\s,;()\[\]{}\\s:'\"]")
 _ID_RE = re.compile(r"[\w.-]+")
@@ -57,6 +58,7 @@ def _substitute_translate(nwk: str, mapping: dict) -> str:
     preceded by ``:`` or ``.`` or a digit) are substituted, so lengths like
     ``19.19959`` are left untouched.
     """
+
     def repl(match):
         tok = match.group(0)
         label = mapping.get(tok)
@@ -67,7 +69,7 @@ def _substitute_translate(nwk: str, mapping: dict) -> str:
     return re.sub(r"(?<![\w.\d:])\d+", repl, nwk)
 
 
-def read_nexus(nexus_string: str, tree_name: Optional[str] = None) -> Tree:
+def read_nexus(nexus_string: str, tree_name: str | None = None) -> Tree:
     """Read the first tree from a NEXUS string.  See :func:`read_nexuses`."""
     trees = read_nexuses(nexus_string, tree_name=tree_name)
     if not trees:
@@ -75,11 +77,11 @@ def read_nexus(nexus_string: str, tree_name: Optional[str] = None) -> Tree:
     return trees[0]
 
 
-def read_nexuses(nexus_string: str, tree_name: Optional[str] = None) -> List[Tree]:
+def read_nexuses(nexus_string: str, tree_name: str | None = None) -> list[Tree]:
     """Read every tree in a NEXUS string, honouring TRANSLATE and capturing
     embodied ``[&key=value]`` node annotations."""
     mapping: dict = {}
-    trees: List[Tree] = []
+    trees: list[Tree] = []
 
     for block in _BLOCK_RE.finditer(nexus_string):
         if block.group(1).upper() != "TREES":
@@ -120,7 +122,9 @@ def write_nexus(trees, title: str = "Tree") -> str:
     trans = [(str(i + 1), n) for i, n in enumerate(tip_labels)]
     if trans:
         lines.append(
-            "  TRANSLATE " + ", ".join(f"{num} {_quote_label(n)}" for num, n in trans) + ";"
+            "  TRANSLATE "
+            + ", ".join(f"{num} {_quote_label(n)}" for num, n in trans)
+            + ";"
         )
     for i, t in enumerate(trees):
         label = title if len(trees) == 1 else f"{title}_{i + 1}"
@@ -129,7 +133,7 @@ def write_nexus(trees, title: str = "Tree") -> str:
     return "\n".join(lines)
 
 
-def _union_tip_labels(trees: List[Tree]) -> List[str]:
+def _union_tip_labels(trees: list[Tree]) -> list[str]:
     out, seen = [], set()
     for t in trees:
         for name in t.get_tip_names():
