@@ -196,10 +196,16 @@ def _rect_coords(
     tipy = {tip: float(i) for i, tip in enumerate(tips)}
     coords: dict[Tree, tuple[float, float]] = {}
     for node in tree.traverse("postorder"):
-        if not node.children:
+        # iterate the raw ``_children`` list: ``node.children`` wraps it in a
+        # ``_ChildrenView`` on *every* access, which costs an allocation per
+        # interior node on large trees.  The two are equivalent (the view only
+        # adds iteration/len over the same list) and this is the hottest pure-
+        # python loop in the layout, so reach into the list directly.
+        ch = node._children
+        if not ch:
             y = tipy[node]
         else:
-            y = sum(coords[c][1] for c in node.children) / len(node.children)
+            y = sum(coords[c][1] for c in ch) / len(ch)
         coords[node] = (xpos[node], y)
     return coords
 
@@ -252,16 +258,31 @@ def _x_positions(
 
 
 def _polarize(coords: dict[Tree, tuple[float, float]], tree: Tree, layout: str):
-    n = tree.nleaves or 1
-    xmax = max((c[0] for c in coords.values()), default=0.0) or 1.0
+    # ``tree.nleaves`` lazily calls ``get_tips`` (a full traversal that wraps
+    # every node in a ``_ChildrenView`` via ``is_leaf``), and ``xmax`` needed
+    # its own pass over all coords.  Compute both in a single O(n) sweep walking
+    # the raw ``_children`` list, then bind the trig functions once.  The
+    # numeric result is identical: ``n`` is the number of leaves and ``xmax``
+    # the largest radius, exactly what ``nleaves``/``max(...)`` produced.
+    cos = math.cos
+    sin = math.sin
+    pi = math.pi
+    xmax = 0.0
+    n = 0
+    for node, (x, _y) in coords.items():
+        xmax = max(xmax, x)
+        if not node._children:
+            n += 1
+    xmax = xmax or 1.0
+    n = n or 1
     out = {}
     if layout == "fan":
-        sweep = math.pi
-        start = math.pi / 2 - sweep / 2
+        sweep = pi
+        start = pi / 2 - sweep / 2
         for node, (x, y) in coords.items():
             r = x / xmax
             theta = start + (y / n) * sweep
-            out[node] = (r * math.cos(theta), r * math.sin(theta))
+            out[node] = (r * cos(theta), r * sin(theta))
         return out
     if layout == "ellipse":
         # Elliptical phylogram (ggtree ``ellipse``): tips are swept over a
@@ -269,22 +290,20 @@ def _polarize(coords: dict[Tree, tuple[float, float]], tree: Tree, layout: str):
         # the x-axis so the outline is a true ellipse rather than the unit
         # circle of ``circular``.  This is genuinely distinct from ``circular``:
         # the same ``(y/n)*2pi - pi/2`` mapping is NOT reused.
-        sweep = 1.5 * math.pi  # 270 deg arc -> 90 deg open crown
-        start = math.pi + math.pi / 4  # anchor so the opening faces left
+        sweep = 1.5 * pi  # 270 deg arc -> 90 deg open crown
+        start = pi + pi / 4  # anchor so the opening faces left
         stretch = 1.2  # x-axis elongation -> elliptical outline
         for node, (x, y) in coords.items():
             r = x / xmax
             theta = start + (y / n) * sweep
-            out[node] = (r * stretch * math.cos(theta), r * math.sin(theta))
+            out[node] = (r * stretch * cos(theta), r * sin(theta))
         return out
     for node, (x, y) in coords.items():
         r = x / xmax
         theta = (
-            ((y / n) * 2 * math.pi - math.pi / 2)
-            if layout != "unrooted"
-            else ((y / n) * 2 * math.pi)
+            ((y / n) * 2 * pi - pi / 2) if layout != "unrooted" else ((y / n) * 2 * pi)
         )
-        out[node] = (r * math.cos(theta), r * math.sin(theta))
+        out[node] = (r * cos(theta), r * sin(theta))
     return out
 
 
@@ -302,30 +321,53 @@ def _equal_angle_coords(
     rectangular ``reverse_x``).
     """
     has_bl = _has_branch_lengths(tree)
-    xmax = (
-        max((_x_for(tree, n, has_bl) for n in tree.traverse("preorder")), default=1.0)
-        or 1.0
-    )
+    # Precompute per-node cumulative radius (branch length / depth from the root)
+    # and per-node leaf count in two single linear passes.  The recursive
+    # ``assign`` below used to re-walk every child subtree (``get_tips``) and
+    # ``_x_for`` re-climbed the parent chain per node -- both O(n * depth).
+    radius = {}
+    stack = [(tree, 0.0)]
+    if has_bl:
+        while stack:
+            node, r = stack.pop()
+            radius[node] = r
+            for c in node._children:
+                stack.append(
+                    (c, r + (c.branch_length if c.branch_length is not None else 0.0))
+                )
+    else:
+        while stack:
+            node, r = stack.pop()
+            radius[node] = r
+            for c in node._children:
+                stack.append((c, r + 1.0))
+    xmax = max(radius.values(), default=1.0) or 1.0
+    leaf_count = {}
+    for node in tree.traverse("postorder"):
+        if node._children:
+            leaf_count[node] = sum(leaf_count[c] for c in node._children)
+        else:
+            leaf_count[node] = 1
     ang: dict[Tree, float] = {}
 
     def assign(node: Tree, theta0: float, theta1: float) -> None:
         ang[node] = (theta0 + theta1) / 2.0
-        if node.is_leaf():
+        kids = node._children
+        if not kids:
             return
-        kids = node.children
         width = theta1 - theta0
         # arc width proportional to each child's tip count
-        total = sum(len(c.get_tips()) for c in kids) or 1
+        total = sum(leaf_count[c] for c in kids) or 1
         cursor = theta0
         for c in kids:
-            frac = len(c.get_tips()) / total
+            frac = leaf_count[c] / total
             assign(c, cursor, cursor + width * frac)
             cursor += width * frac
 
     assign(tree, 0.0, 2 * math.pi)
     out = {}
     for node in tree.traverse("preorder"):
-        r = _x_for(tree, node, has_bl) / xmax
+        r = radius[node] / xmax
         if reverse_x:
             # invert the radius so the root sits on the outer edge and the tips
             # collapse toward the centre (mirrors the rectangular reverse_x).
@@ -375,47 +417,57 @@ def _daylight_coords(
     """
     coords = _equal_angle_coords(tree, reverse_x=reverse_x)
 
-    def rotate_about(parent, child, delta):
-        """Rotate the subtree rooted at ``child`` rigidly around ``parent``.
+    def rotate_about(px, py, c, s, child):
+        """Rotate the subtree rooted at ``child`` rigidly around ``(px, py)``.
 
         Angles are measured about the *parent* node, not the global origin, so a
         child subtree is swung as a rigid body about its connection point.  Edges
         keep their length and direction relative to the parent, and symmetric
         subtrees stay distinct instead of swinging onto one another.
         """
-        px, py = coords[parent]
-        c, s = math.cos(delta), math.sin(delta)
-        for x in child.traverse("preorder"):
-            dx = coords[x][0] - px
-            dy = coords[x][1] - py
-            coords[x] = (px + dx * c - dy * s, py + dx * s + dy * c)
+        if child._children:
+            for x in child.traverse("preorder"):
+                cx, cy = coords[x]
+                dx = cx - px
+                dy = cy - py
+                coords[x] = (px + dx * c - dy * s, py + dx * s + dy * c)
+        else:
+            # leaf child -- a single node, avoid the traversal machinery
+            cx, cy = coords[child]
+            dx = cx - px
+            dy = cy - py
+            coords[child] = (px + dx * c - dy * s, py + dx * s + dy * c)
 
+    twopi = 2 * math.pi
     for _ in range(3):
         for node in tree.traverse("preorder"):
-            kids = list(node.children)
+            kids = node._children
             if len(kids) < 2:
                 continue
             px, py = coords[node]
-            # local (around-the-parent) angle of each child
-            local = {k: math.atan2(coords[k][1] - py, coords[k][0] - px) for k in kids}
-            ordered = sorted(kids, key=lambda k: local[k] % (2 * math.pi))
-            angs = [local[k] % (2 * math.pi) for k in ordered]
+            # local (around-the-parent) angle of each child, normalised once
+            loc = []
+            for k in kids:
+                kx, ky = coords[k]
+                loc.append((k, math.atan2(ky - py, kx - px) % twopi))
+            loc.sort(key=lambda item: item[1])
+            ordered = [item[0] for item in loc]
+            angs = [item[1] for item in loc]
             # find the biggest gap between consecutive children
-            gaps = [
-                (angs[(i + 1) % len(angs)] - angs[i]) % (2 * math.pi)
-                for i in range(len(angs))
-            ]
+            nk = len(angs)
+            gaps = [(angs[(i + 1) % nk] - angs[i]) % twopi for i in range(nk)]
             gi = gaps.index(max(gaps))
-            start = angs[(gi + 1) % len(angs)]
-            even = (2 * math.pi) / len(kids)
+            start = angs[(gi + 1) % nk]
+            even = twopi / len(kids)
             # place each child (and its subtree) evenly, in angular order
             for j, k in enumerate(ordered):
-                target = (start + j * even) % (2 * math.pi)
+                target = (start + j * even) % twopi
                 cur = angs[j]
-                delta = (target - cur) % (2 * math.pi)
+                delta = (target - cur) % twopi
                 if delta > math.pi:
-                    delta -= 2 * math.pi
-                rotate_about(node, k, delta)
+                    delta -= twopi
+                c, s = math.cos(delta), math.sin(delta)
+                rotate_about(px, py, c, s, k)
     return coords
 
 
@@ -471,9 +523,9 @@ def _rounded_lpath(
     pts = [(xp, yp)]
     # approach point on the vertical leg, ending r short of the corner
     pts.append((xp, yc - sy * r))
-    # quarter arc centred at (xp + sx*r, yc - sy*r)
-    import math
-
+    # quarter arc centred at (xp + sx*r, yc - sy*r).  ``math`` is already
+    # imported at module scope; a per-edge ``import math`` here costs a global
+    # dict lookup + local name binding on every edge of a ``roundrect`` tree.
     cx, cy = xp + sx * r, yc - sy * r
     for i in range(1, n + 1):
         t = (i / n) * (math.pi / 2)
@@ -671,6 +723,7 @@ def draw_tree(
         )
     if tip_labels:
         if polar:
+            import bisect
             import math
 
             n = len(tips) or 1
@@ -678,14 +731,19 @@ def draw_tree(
             # dense clusters push their labels outward (avoiding overlap).
             threshold = (2 * math.pi / n) * 0.6
             angles = [math.atan2(tip_y[i], tip_x[i]) for i in range(n)]
+            # Count, for every tip, how many other tips lie within ``threshold``
+            # radians on the circle -- the label crowd.  The naive per-tip scan is
+            # O(n^2); a 3x-periodic (shifted) copy of the sorted angles lets each
+            # count be answered with two binary searches in O(n log n) total, and
+            # yields the same integer crowd (verified bit-for-bit).  The original
+            # crowd includes the tip itself (``j`` runs over all tips).
+            ext = sorted(angles)
+            ext = [x - 2 * math.pi for x in ext] + ext + [x + 2 * math.pi for x in ext]
             offset_map = {}
             for i in range(n):
                 a = angles[i]
-                crowd = sum(
-                    1
-                    for j in range(n)
-                    if abs((angles[j] - a + math.pi) % (2 * math.pi) - math.pi)
-                    < threshold
+                crowd = bisect.bisect_right(ext, a + threshold) - bisect.bisect_left(
+                    ext, a - threshold
                 )
                 offset_map[i] = label_radial_offset * (1 + 0.3 * max(0, crowd - 1))
         else:
@@ -694,28 +752,32 @@ def draw_tree(
             off = offset_map.get(i, label_radial_offset)
             _write_tip_label(ax, x, y, t.name, polar, c, label_size, offset=off)
 
-    nodes = tree.get_internal_nodes()
-    if node_points:
-        ax.scatter(
-            [coords[n][0] for n in nodes],
-            [coords[n][1] for n in nodes],
-            s=12,
-            c=["#999999"],
-            zorder=3,
-        )
-    if node_support:
-        for n in nodes:
-            if n.support is not None:
-                x, y = coords[n]
-                ax.text(
-                    x,
-                    y + 0.05,
-                    str(n.support),
-                    fontsize=label_size - 2,
-                    color="#666666",
-                    ha="center",
-                    va="bottom",
-                )
+    if node_points or node_support:
+        # ``get_internal_nodes`` is a full post-order walk that wraps every node
+        # in a ``_ChildrenView``; skip it entirely on the default path where
+        # neither internal markers nor support labels are drawn.
+        nodes = tree.get_internal_nodes()
+        if node_points:
+            ax.scatter(
+                [coords[n][0] for n in nodes],
+                [coords[n][1] for n in nodes],
+                s=12,
+                c=["#999999"],
+                zorder=3,
+            )
+        if node_support:
+            for n in nodes:
+                if n.support is not None:
+                    x, y = coords[n]
+                    ax.text(
+                        x,
+                        y + 0.05,
+                        str(n.support),
+                        fontsize=label_size - 2,
+                        color="#666666",
+                        ha="center",
+                        va="bottom",
+                    )
 
     if polar and theme == "void":
         ax.set_axis_off()
@@ -1046,6 +1108,48 @@ def highlight_clade(
 # ----------------------------------------------------------------------- --
 # concentric tip-data rings around a tree (ggtree ring / annoRing analogue)
 # ----------------------------------------------------------------------- --
+def _tip_sectors(tree, layout, coords=None):
+    """Return ``[angle0, angle1]`` (degrees, the cyclic arc) for every tip.
+
+    Precomputed once so :func:`add_ring` / :func:`gheatmap` can draw all ``n``
+    wedges in ``O(n log n)`` instead of re-sorting the tip angles (and doing the
+    ``order.index`` lookup) for every tip, which was ``O(n^2)`` across a whole
+    ring.  The sector returned for tip ``i`` is identical to what
+    :func:`_tip_angles` computes.
+    """
+    if layout == "fan":
+        sweep = 180.0
+        start = 90.0 - sweep / 2
+        m = len(tree.get_tips()) or 1
+        return [
+            (start + (i / m) * sweep, start + ((i + 1) / m) * sweep) for i in range(m)
+        ]
+    if coords is None:
+        coords = tree_coords(tree, layout)
+    tips = tree.get_tips()
+    m = len(tips) or 1
+    angles = [
+        math.degrees(math.atan2(coords[t][1], coords[t][0])) % 360.0 for t in tips
+    ]
+    # order tips by their actual angle (cyclic).  Each tip owns the arc from just
+    # before itself to just before its next angular neighbour, so the whole ring
+    # is tiled once with each tip sitting at its own sector's leading edge.
+    order = sorted(range(m), key=lambda k: angles[k])
+    # map tip index -> its position in the angular order (replaces the per-tip
+    # ``order.index(i)`` which made the whole ring O(n^2))
+    pos = {p: j for j, p in enumerate(order)}
+    eps = 1e-6
+    sectors = []
+    for i in range(m):
+        a0 = (angles[i] - eps) % 360.0
+        nxt = order[(pos[i] + 1) % m]
+        width = (angles[nxt] - a0) % 360.0
+        if width < 1e-9:  # degenerate: two tips on the same ray -- even slice
+            width = 360.0 / m
+        sectors.append((a0, a0 + width))
+    return sectors
+
+
 def _tip_angles(tree, i, n, layout, coords=None):
     """Angular extent (degrees) of tip index ``i`` in layout ``layout``.
 
@@ -1069,30 +1173,15 @@ def _tip_angles(tree, i, n, layout, coords=None):
     ``tip + 180/n`` ideal, so callers that measure the sector/tip offset by
     wrapping to ``[0, 360)`` (see ``test_unrooted_ring_aligns_with_tips``) get a
     stable result instead of ``+/-1e-14`` float noise flipping the sign.
+
+    This is the per-tip accessor form of :func:`_tip_sectors`; ``i`` is the
+    index into the order-returned by :meth:`Tree.get_tips`.
     """
     if layout == "fan":
         sweep = 180.0
         start = 90.0 - sweep / 2
         return start + (i / n) * sweep, start + ((i + 1) / n) * sweep
-    if coords is None:
-        coords = tree_coords(tree, layout)
-    tips = tree.get_tips()
-    m = len(tips) or 1
-    angles = [
-        math.degrees(math.atan2(coords[t][1], coords[t][0])) % 360.0 for t in tips
-    ]
-    # order tips by their actual angle (cyclic).  Each tip owns the arc from just
-    # before itself to just before its next angular neighbour, so the whole ring
-    # is tiled once with each tip sitting at its own sector's leading edge.
-    order = sorted(range(m), key=lambda k: angles[k])
-    pos = order.index(i)
-    eps = 1e-6
-    a0 = (angles[i] - eps) % 360.0
-    nxt = order[(pos + 1) % m]
-    width = (angles[nxt] - a0) % 360.0
-    if width < 1e-9:  # degenerate: two tips on the same ray -- give an even slice
-        width = 360.0 / m
-    return a0, a0 + width
+    return _tip_sectors(tree, layout, coords)[i]
 
 
 def add_ring(
@@ -1134,11 +1223,11 @@ def add_ring(
     if coords is None:
         coords = tree_coords(tree, layout=layout)
     tips = tree.get_tips()
-    n = len(tips) or 1
     values = {t.name: t.get_data(field) for t in tips}
     known = {k: v for k, v in values.items() if v is not None}
     if not known:
         return None, []
+    sectors = _tip_sectors(tree, layout, coords)
     base_outer = max(math.hypot(*coords[t]) for t in tips) or 1.0
     outer = getattr(ax, "_treeio_ring_r", base_outer + start)
     w = ring_width
@@ -1162,7 +1251,7 @@ def add_ring(
         for i, tip in enumerate(tips):
             if values[tip.name] is None:
                 continue
-            a0, a1 = _tip_angles(tree, i, n, layout, coords)
+            a0, a1 = sectors[i]
             ax.add_patch(
                 Wedge(
                     (0, 0),
@@ -1187,7 +1276,7 @@ def add_ring(
     for i, tip in enumerate(tips):
         if values[tip.name] is None:
             continue
-        a0, a1 = _tip_angles(tree, i, n, layout, coords)
+        a0, a1 = sectors[i]
         ax.add_patch(
             Wedge(
                 (0, 0),
@@ -1291,7 +1380,6 @@ def gheatmap(
     if coords is None:
         coords = tree_coords(tree, layout=layout)
     tips = tree.get_tips()
-    n = len(tips) or 1
     # gather per-column values (aligned to tips; missing -> None)
     allvals = []
     numeric = True
@@ -1326,13 +1414,14 @@ def gheatmap(
         # concentric rings -- each column is drawn at a progressively larger radius
         base_outer = max(math.hypot(*coords[t]) for t in tips) or 1.0
         w = cell_width / 8.0
+        sectors = _tip_sectors(tree, layout, coords)
         for vals in allvals:
             outer = getattr(ax, "_treeio_ring_r", base_outer + 0.12)
             for i, tip in enumerate(tips):
                 v = vals.get(tip.name)
                 if v is None:
                     continue
-                a0, a1 = _tip_angles(tree, i, n, layout, coords)
+                a0, a1 = sectors[i]
                 ax.add_patch(
                     Wedge(
                         (0, 0),

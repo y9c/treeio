@@ -23,12 +23,17 @@ from a CSV / DNAML), or a two-sequence mapping of names to values.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from .tree import Tree
+
+# external data: a ``{label: value}`` dict, or a sequence of dict rows
+_Data = dict[str, object] | Sequence[dict[str, object]]
 
 
 def attach(
     tree: Tree,
-    data,
+    data: _Data,
     key: str | None = None,
     match: str = "name",
 ) -> Tree:
@@ -78,17 +83,17 @@ def attach(
     return tree
 
 
-def attach_to_tips(tree: Tree, data, key: str | None = None) -> Tree:
+def attach_to_tips(tree: Tree, data: _Data, key: str | None = None) -> Tree:
     """Attach data only to tip nodes (see :func:`attach`)."""
     return _attach_filtered(tree, data, key, terminal=True)
 
 
-def attach_to_nodes(tree: Tree, data, key: str | None = None) -> Tree:
+def attach_to_nodes(tree: Tree, data: _Data, key: str | None = None) -> Tree:
     """Attach data only to internal nodes (see :func:`attach`)."""
     return _attach_filtered(tree, data, key, terminal=False)
 
 
-def _attach_filtered(tree: Tree, data, key, terminal):
+def _attach_filtered(tree: Tree, data: _Data, key: str | None, terminal: bool) -> Tree:
     mapping = {}
     if isinstance(data, dict):
         index = tree.label_index()
@@ -96,7 +101,6 @@ def _attach_filtered(tree: Tree, data, key, terminal):
             node = index.get(str(label))
             if node is not None and node.is_leaf() == terminal:
                 mapping[node] = value
-    # apply via attach-like semantics on the filtered subset
 
     for node, value in mapping.items():
         if isinstance(value, dict):
@@ -109,12 +113,12 @@ def _attach_filtered(tree: Tree, data, key, terminal):
     return tree
 
 
-def get_tipdata(tree: Tree, key: str, default=None) -> dict[str, object]:
+def get_tipdata(tree: Tree, key: str, default: object = None) -> dict[str, object]:
     """Return ``{tip_name: value}`` for a tip-level annotation."""
     return tree.get_tipdata(key, default)
 
 
-def get_nodedata(tree: Tree, key: str, default=None) -> dict[str, object]:
+def get_nodedata(tree: Tree, key: str, default: object = None) -> dict[str, object]:
     """Return ``{node_name: value}`` for an internal-node annotation."""
     return tree.get_nodedata(key, default)
 

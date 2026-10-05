@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
 
 from .tree import Tree
@@ -85,7 +86,7 @@ def named_palette(names: Sequence[str]) -> dict[str, str]:
 
 def suggest_figsize(
     tree: Tree, layout: str = "rectangular", base_width: int = 800, tip_slot: int = 14
-):
+) -> tuple[int, int]:
     """A sensible canvas size ``(width, height)`` for a tree.
 
     Height scales with the number of tips so points / labels do not overlap;
@@ -93,9 +94,7 @@ def suggest_figsize(
     """
     n = tree.nleaves or 1
     if layout in ("circular", "fan", "radial", "unrooted"):
-        import math as _m
-
-        side = int(min(max(400, _m.sqrt(n) * base_width / 5.0), 6000))
+        side = int(min(max(400, math.sqrt(n) * base_width / 5.0), 6000))
         return side, side
     height = int(min(max(300, n * tip_slot + 80), 20000))
     return int(base_width), height
@@ -116,7 +115,7 @@ def _gradient(t: float) -> str:
     return f"#{r:02x}{g:02x}{bl:02x}"
 
 
-def _fmt_num(x) -> str:
+def _fmt_num(x: float) -> str:
     f = float(x)
     if abs(f) >= 1000 or (abs(f) < 0.01 and f != 0):
         return f"{f:.1e}"

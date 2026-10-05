@@ -11,6 +11,7 @@
 Textually visualized tree, with vertically-centered parent nodes.
 """
 
+import sys
 from collections.abc import Callable
 from functools import reduce
 from itertools import chain
@@ -20,14 +21,13 @@ from .tree import Tree
 
 
 def tree_to_ascii(tree: Tree, is_compact: bool, is_pruned: bool) -> str:
-    """
-    Monospaced UTF8 left-to-right text tree.
+    """Render a tree as a monospaced, UTF-8, left-to-right text diagram.
 
-    In a compact or expanded format,
-    with any lines containing no nodes optionally pruned out.
+    ``is_compact`` collapses the empty spacing that keeps parent nodes
+    vertically centered; ``is_pruned`` drops lines that contain no node
+    glyphs (useful for wide, sparse trees).
 
-    Bool -> Bool -> Tree a -> String
-    Demo output.
+    Example output::
 
                 ┌ Epsilon
                 ├─── Zeta
@@ -40,8 +40,6 @@ def tree_to_ascii(tree: Tree, is_compact: bool, is_pruned: bool) -> str:
         └ Delta ┼── Kappa
                 └─ Lambda
     """
-    import sys
-
     # the pretty-printer recurses by tree depth; give deep trees headroom.
     depth = _tree_depth(tree)
     need = depth * 3 + 1000

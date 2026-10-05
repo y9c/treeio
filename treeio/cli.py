@@ -29,7 +29,7 @@ from .show import tree_to_ascii
 
 @click.group(invoke_without_command=True)
 @click.pass_context
-def cli(ctx):
+def cli(ctx: click.Context) -> None:
     """Parse, transform, display and plot phylogenetic trees."""
     if ctx.invoked_subcommand is None:
         click.echo(ctx.get_help())
@@ -42,7 +42,12 @@ def cli(ctx):
 )
 @click.option("--format-in", "fmt_in", default=None, help="Force input format.")
 @click.option("--format-out", "fmt_out", default=None, help="Force output format.")
-def convert(input_path, output_path, fmt_in, fmt_out):
+def convert(
+    input_path: str,
+    output_path: str,
+    fmt_in: str | None = None,
+    fmt_out: str | None = None,
+) -> None:
     """Convert tree formats (newick, nexus, json, phyloxml)."""
     try:
         tree = read(input_path, format=fmt_in)
@@ -55,7 +60,7 @@ def convert(input_path, output_path, fmt_in, fmt_out):
 @cli.command()
 @click.option("--input", "-i", "input_path", required=True, help="Path of input file.")
 @click.option("--index", default=0, help="Tree index (0-based) for multi-tree files.")
-def show(input_path, index):
+def show(input_path: str, index: int) -> None:
     """Render a tree as ASCII art in the terminal."""
     try:
         tree = read_many(input_path)[index]
@@ -99,20 +104,20 @@ def show(input_path, index):
 @click.option("--width", default=800, type=int)
 @click.option("--height", default=600, type=int)
 def plot_tree(
-    input_path,
-    output_path,
-    layout,
-    backend,
-    no_tip_labels,
-    no_tip_points,
-    support,
-    width,
-    height,
-):
+    input_path: str,
+    output_path: str | None,
+    layout: str,
+    backend: str,
+    no_tip_labels: bool,
+    no_tip_points: bool,
+    support: bool,
+    width: int,
+    height: int,
+) -> None:
     """Render a tree (mpl figure / ascii text)."""
     try:
         tree = read(input_path)
-        opts = {
+        opts: dict[str, object] = {
             "layout": layout,
             "width": width,
             "height": height,

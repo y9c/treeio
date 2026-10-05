@@ -71,7 +71,11 @@ def _parse_clade(elem) -> Tree:
         elif tag == "confidence":
             node.support = _to_float(child.text)
         elif tag == "clade":
-            node.append_child(_parse_clade(child))
+            # child is freshly built (no parent, never a duplicate), so attach
+            # directly to avoid ``append_child``'s per-child linear scan on wide nodes.
+            child_node = _parse_clade(child)
+            node._children.append(child_node)
+            child_node._parent = node
         elif tag == "property":
             key = child.get("ref") or child.get("name")
             if key:
@@ -112,36 +116,88 @@ def write_phyloxml(
 
     root = ET.Element("phyloxml")
     root.append(phylo)
-    ET.indent(root)
+    # ``ET.indent`` recurses in the stdlib, so it would overflow Python's
+    # recursion limit on a very deep tree.  Use the same formatting produced by
+    # ``ET.indent`` but computed iteratively.
+    _indent(root)
     return ET.tostring(root, encoding="unicode") + "\n"
 
 
 def _clade_elem(node: Tree, properties: list[str]) -> ET.Element:
-    clade = ET.Element("clade")
-    if node.name:
-        name = ET.SubElement(clade, "name")
-        name.text = node.name
-    if node.branch_length is not None:
-        bl = ET.SubElement(clade, "branch_length")
-        bl.text = _fmt(node.branch_length)
-    if node.support is not None:
-        conf = ET.SubElement(clade, "confidence")
-        conf.set("type", "support")
-        conf.text = _fmt(node.support)
-    if properties:
-        for key in properties:
-            value = node.get_data(key)
-            if value is not None:
-                prop = ET.SubElement(clade, "property")
-                prop.set("ref", key)
-                prop.text = str(value)
-    for c in node.children:
-        clade.append(_clade_elem(c, properties))
-    return clade
+    """Build a ``<clade>`` element for ``node`` iteratively.
+
+    An explicit ``(node, parent_element)`` stack is used instead of recursion so
+    a very deep tree does not exhaust Python's recursion limit.
+    """
+
+    def build(n: Tree) -> ET.Element:
+        clade = ET.Element("clade")
+        if n.name:
+            name = ET.SubElement(clade, "name")
+            name.text = n.name
+        if n.branch_length is not None:
+            bl = ET.SubElement(clade, "branch_length")
+            bl.text = _fmt(n.branch_length)
+        if n.support is not None:
+            conf = ET.SubElement(clade, "confidence")
+            conf.set("type", "support")
+            conf.text = _fmt(n.support)
+        if properties:
+            for key in properties:
+                value = n.get_data(key)
+                if value is not None:
+                    prop = ET.SubElement(clade, "property")
+                    prop.set("ref", key)
+                    prop.text = str(value)
+        return clade
+
+    build_root = build(node)
+    stack: list[tuple[Tree, ET.Element]] = []
+    # push reversed so a LIFO pop appends children left-to-right
+    for c in reversed(node._children):
+        stack.append((c, build_root))
+    while stack:
+        n, parent_elem = stack.pop()
+        elem = build(n)
+        parent_elem.append(elem)
+        for c in reversed(n._children):
+            stack.append((c, elem))
+    return build_root
 
 
 def _local(tag: str) -> str:
     return tag.rsplit("}", 1)[-1]
+
+
+def _indent(elem: ET.Element, space: str = "  ") -> None:
+    """Insert newlines/indentation like :func:`xml.etree.ElementTree.indent`.
+
+    The stdlib ``indent`` recurses per level, so a very deep tree would raise
+    ``RecursionError``.  This reproduces the same output iteratively.
+    """
+    if len(elem) == 0:
+        return
+    indentations = ["\n"]
+    stack = [(elem, 0)]
+    while stack:
+        el, lvl = stack.pop()
+        child_level = lvl + 1
+        try:
+            ci = indentations[child_level]
+        except IndexError:
+            ci = indentations[lvl] + space
+            indentations.append(ci)
+        if not el.text or not el.text.strip():
+            el.text = ci
+        children = list(el)
+        for ch in children:
+            if not ch.tail or not ch.tail.strip():
+                ch.tail = ci
+            if len(ch):
+                stack.append((ch, child_level))
+        # dedent the last child to the current level (mirrors stdlib behaviour)
+        if children and (children[-1].tail is None or not children[-1].tail.strip()):
+            children[-1].tail = indentations[lvl]
 
 
 def _to_float(text):

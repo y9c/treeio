@@ -119,11 +119,13 @@ def write_nexus(trees, title: str = "Tree") -> str:
     lines.append("  TAXLABELS " + " ".join(_quote_label(n) for n in tip_labels) + ";")
     lines.append("END;")
     lines.append("BEGIN TREES;")
-    trans = [(str(i + 1), n) for i, n in enumerate(tip_labels)]
+    # label -> translate id; a dict makes the per-tip ``_ref_label`` lookup O(1)
+    # instead of a linear scan through the translate table on every node.
+    trans = {n: str(i + 1) for i, n in enumerate(tip_labels)}
     if trans:
         lines.append(
             "  TRANSLATE "
-            + ", ".join(f"{num} {_quote_label(n)}" for num, n in trans)
+            + ", ".join(f"{num} {_quote_label(n)}" for n, num in trans.items())
             + ";"
         )
     for i, t in enumerate(trees):
@@ -143,20 +145,53 @@ def _union_tip_labels(trees: list[Tree]) -> list[str]:
     return out
 
 
-def _write_ref(node: Tree, trans: list) -> str:
-    if node.is_leaf():
-        s = _ref_label(node.name, trans)
-    else:
-        inner = ",".join(_write_ref(c, trans) for c in node.children)
-        s = "(" + inner + ")"
-        if node.name and node.name != "unknown":
-            s += node.name
-        elif node.support is not None:
-            s += str(node.support)
+def _write_ref(node: Tree, trans: dict) -> str:
+    """Serialize ``node`` as a (translated) newick string, iteratively.
+
+    A shared output list plus an explicit task stack is used instead of the
+    previous recursion, so a very deep tree does not exhaust Python's recursion
+    limit and the per-level ``"(" + inner + ")"`` string copying that made deep
+    trees quadratic is avoided.
+    """
+    out: list = []
+    stack = [("node", node)]
+    while stack:
+        kind, data = stack.pop()
+        if kind == "node":
+            n = data
+            if not n._children:
+                out.append(_ref_label(n.name, trans))
+                _write_ref_suffix(out, n)
+            else:
+                out.append("(")
+                children = n._children
+                tasks = []
+                for i, c in enumerate(children):
+                    tasks.append(("node", c))
+                    if i != len(children) - 1:
+                        tasks.append(("comma", None))
+                tasks.append(("post", n))
+                stack.extend(reversed(tasks))
+        elif kind == "comma":
+            out.append(",")
+        else:  # "post"
+            n = data
+            out.append(")")
+            if n.name and n.name != "unknown":
+                out.append(n.name)
+            elif n.support is not None:
+                out.append(str(n.support))
+            _write_ref_suffix(out, n)
+    return "".join(out)
+
+
+def _write_ref_suffix(out: list, node: Tree) -> None:
+    """Append ``[:length]`` and any ``[&key=value]`` block for ``node``."""
     if node.branch_length is not None:
-        s += ":" + repr(node.branch_length)
-    s += _write_annotations(node)
-    return s
+        out.append(":" + repr(node.branch_length))
+    s = _write_annotations(node)
+    if s:
+        out.append(s)
 
 
 def _write_annotations(node: Tree) -> str:
@@ -176,10 +211,10 @@ def _write_annotations(node: Tree) -> str:
     return "[&" + ", ".join(parts) + "]"
 
 
-def _ref_label(name: str, trans: list) -> str:
-    for num, label in trans:
-        if label == name:
-            return num
+def _ref_label(name: str, trans: dict) -> str:
+    num = trans.get(name)
+    if num is not None:
+        return num
     return _quote_label(name)
 
 

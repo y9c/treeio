@@ -4,11 +4,11 @@ from .io import read, write
 
 
 def convert_format(
-    input_path,
-    output_path,
+    input_path: str,
+    output_path: str,
     format_in: str | None = None,
     format_out: str | None = None,
-):
+) -> str:
     """Convert a tree file from one format to another.
 
     Formats are inferred from the file extensions unless explicitly given.

@@ -51,12 +51,15 @@ def read_json(
     """
 
     data = json.loads(json_string)
-    # assert type(data) is dict, "Only single tree is supported."
 
     tree_scratch = Tree("scratch")
 
-    def _parse_node(obj, tree_cur):
-        """Recursively search for values of key in JSON tree."""
+    # Build the tree iteratively with an explicit stack so a very deep tree
+    # does not exhaust Python's recursion limit (stateful DFS over ``(obj,parent)``
+    # pairs).  This reproduces exactly what the recursive ``_parse_node`` did.
+    stack = [(data, tree_scratch)]
+    while stack:
+        obj, tree_cur = stack.pop()
         if isinstance(obj, dict):
             node = Tree(
                 name=obj.get(name_key),
@@ -70,15 +73,14 @@ def read_json(
             for k, v in obj.items():
                 if k not in structural:
                     node.set_data(k, v)
-            tree_cur.append_child(node)
+            tree_cur._children.append(node)
+            node._parent = tree_cur
             if child_key in obj:
-                tree_cur = node
-                _parse_node(obj[child_key], tree_cur)
+                stack.append((obj[child_key], node))
         elif isinstance(obj, list):
-            for item in obj:
-                _parse_node(item, tree_cur)
-
-    _parse_node(data, tree_scratch)
+            # push reversed so a LIFO pop preserves the original left-to-right order
+            for item in reversed(obj):
+                stack.append((item, tree_cur))
 
     return [t.isolated() for t in tree_scratch.children]
 
@@ -95,19 +97,33 @@ def write_json(
     def _record_node(node):
         attr_key = ["name", "branch_length", "support"]
         attr_values = [name_key, branch_length_key, support_key]
-        data = {v: _json_ok(getattr(node, k)) for k, v in zip(attr_key, attr_values)}
-        # persist every per-node ``set_data`` annotation (excluding internal
-        # underscore keys such as layout coordinates) so JSON round-trips them.
-        ann = node._annotations
-        if ann:
-            for k, v in ann.items():
-                if k.startswith("_"):
-                    continue
-                data[k] = _json_ok(v)
-        children = [_record_node(child) for child in node.children]
-        if children:
-            data[child_key] = children
-        return data
+
+        def build(n):
+            data = {v: _json_ok(getattr(n, k)) for k, v in zip(attr_key, attr_values)}
+            # persist every per-node ``set_data`` annotation (excluding internal
+            # underscore keys such as layout coordinates) so JSON round-trips them.
+            ann = n._annotations
+            if ann:
+                for k, v in ann.items():
+                    if k.startswith("_"):
+                        continue
+                    data[k] = _json_ok(v)
+            return data
+
+        # Build the record for ``node`` and its descendants iteratively (explicit
+        # stack) so a very deep tree does not exhaust Python's recursion limit.
+        root = build(node)
+        stack = [(node, root)]
+        while stack:
+            n, rec = stack.pop()
+            if n._children:
+                child_recs = []
+                for c in n._children:
+                    crec = build(c)
+                    child_recs.append(crec)
+                    stack.append((c, crec))
+                rec[child_key] = child_recs
+        return root
 
     if isinstance(trees, Tree):
         trees = [trees]

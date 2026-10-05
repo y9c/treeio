@@ -37,18 +37,22 @@ from .tree import Tree
 
 __all__ = ["build_tree", "distance_matrix", "neighbor_joining"]
 
+# accepted inputs for the ``sequences`` arguments: a ``{name: seq}`` dict, or an
+# iterable of raw sequences / ``(name, seq)`` pairs
+_SeqInput = dict[str, str] | Sequence[str] | Sequence[tuple[str, str]]
+
 
 # ---------------------------------------------------------------------- --
 # sequence handling
 # ---------------------------------------------------------------------- --
-def _seq_text(seq) -> str:
+def _seq_text(seq: object) -> str:
     """Best-effort sequence text from a raw str, dict value or SeqRecord."""
     if hasattr(seq, "seq"):
         return str(seq.seq)
     return str(seq)
 
 
-def _seq_label(seq, index: int) -> str:
+def _seq_label(seq: object, index: int) -> str:
     if hasattr(seq, "id"):
         return str(seq.id)
     if hasattr(seq, "name"):
@@ -56,7 +60,7 @@ def _seq_label(seq, index: int) -> str:
     return str(index)
 
 
-def _normalise(sequences) -> tuple[list[str], list[str]]:
+def _normalise(sequences: _SeqInput) -> tuple[list[str], list[str]]:
     """Return ``(labels, texts)`` for many input forms."""
     if isinstance(sequences, dict):
         items = list(sequences.items())
@@ -111,7 +115,9 @@ _MODELS = {
 }
 
 
-def distance_matrix(sequences, model: str = "p") -> tuple[list[str], list[list[float]]]:
+def distance_matrix(
+    sequences: _SeqInput, model: str = "p"
+) -> tuple[list[str], list[list[float]]]:
     """Return ``(labels, matrix)`` of pairwise distances.
 
     ``model`` may be ``"p"`` (raw p-distance, default) or ``"jc"`` / ``"jc69"``
@@ -210,19 +216,19 @@ def neighbor_joining(labels: Sequence[str], matrix: Sequence[Sequence[float]]) -
         u.append_child(nodes[i])
         u.append_child(nodes[j])
 
-        # new active clusters (drop i, j; add u)
+        # new active clusters (drop i, j; add the new internal node u)
         new_active = [a for a in active if a not in (i, j)]
-        keys = new_active + ["_u"]
-        new_dist = [[0.0] * len(keys) for _ in keys]
+        size = len(new_active) + 1
+        new_dist = [[0.0] * size for _ in range(size)]
         for x, a in enumerate(new_active):
             for y, b in enumerate(new_active):
                 if a != b:
                     new_dist[x][y] = new_dist[y][x] = dist[a][b]
-            # new cluster <-> u
+            # distance from the new cluster u to each remaining cluster
             d = 0.5 * (dist[i][a] + dist[j][a] - dist[i][j])
             new_dist[x][-1] = new_dist[-1][x] = d
 
-        active = list(range(len(keys)))
+        active = list(range(size))
         dist = new_dist
         nodes = [nodes[a] for a in new_active] + [u]
 
@@ -234,7 +240,7 @@ def neighbor_joining(labels: Sequence[str], matrix: Sequence[Sequence[float]]) -
 # convenience: sequences -> tree
 # ---------------------------------------------------------------------- --
 def build_tree(
-    sequences,
+    sequences: _SeqInput,
     model: str = "p",
     rooted: bool = True,
 ) -> Tree:

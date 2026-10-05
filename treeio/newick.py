@@ -131,11 +131,17 @@ class _NewickParser:
         # A bare ';', '()' or a lone empty leaf is a fabricated (empty) tree;
         # reject it rather than silently returning a one-tip junk tree.  A real
         # tree always has at least one leaf carrying an actual name or length.
-        leaves = tree.get_tips()
-        if not leaves or all(
-            (not l.name or l.name == "unknown") and l.branch_length is None
-            for l in leaves
-        ):
+        # Check lazily and short-circuit as soon as a "real" leaf is found (the
+        # post-order walk yields leaves first), instead of building the full tip
+        # list -- this avoids a redundant O(n) traversal on every parse.
+        found = False
+        for l in tree:
+            if not l._children and (
+                (l.name and l.name != "unknown") or l.branch_length is not None
+            ):
+                found = True
+                break
+        if not found:
             raise ValueError("no tree found in newick string")
         if tree.parent is not None:
             tree.isolated()
@@ -158,30 +164,82 @@ class _NewickParser:
         return out
 
     def _subtree(self) -> Tree:
-        self._skip()
-        if self._peek() == "(":
-            self.i += 1
-            children = []
+        """Parse one subtree iteratively (explicit stack).
+
+        The recursive-descent parser recursed once per tree level, so a very
+        deep caterpillar (>~500 levels) exhausted Python's recursion limit.
+        This version walks the token stream with an explicit stack of "open"
+        internal nodes instead, producing exactly the same tree while coping
+        with arbitrarily deep trees.
+        """
+        root = None
+        stack: list[Tree] = []
+
+        while True:
+            self._skip()
+            c = self._peek()
+            if c == "(":
+                # Open a new internal node; its children are read next.
+                self.i += 1
+                node = Tree()
+                if not stack:
+                    root = node
+                stack.append(node)
+                continue
+
+            # A leaf token (or, for an empty ``()`` group, a bare unnamed leaf).
+            leaf = Tree()
+            self._label_branch(leaf)
+            if stack:
+                parent = stack[-1]
+                parent._children.append(leaf)
+                leaf._parent = parent
+            else:
+                root = leaf
+
+            # Advance past the separator (``,``) and any number of closing
+            # parens.  A comma is only a sibling separator inside an open node.
+            ended = True
             while True:
                 self._skip()
-                children.append(self._subtree())
-                self._skip()
-                if self._peek() == ",":
+                nc = self._peek()
+                if nc == "," and stack:
                     self.i += 1
+                    ended = False
+                    break
+                if nc == ")":
+                    self.i += 1
+                    if not stack:
+                        # Stray ``)`` at the top level with no open node to
+                        # close: stop and return the tree parsed so far (the
+                        # recursive-descent parser did the same, rather than
+                        # raising an ``IndexError``).
+                        return root
+                    node = stack.pop()
+                    self._label_branch(node)
+                    if stack:
+                        parent = stack[-1]
+                        parent._children.append(node)
+                        node._parent = parent
+                    else:
+                        root = node
                     continue
                 break
-            self._skip()
-            if self._peek() == ")":
-                self.i += 1
-            node = Tree()
-            for c in children:
-                node.append_child(c)
-            self._label_branch(node)
-            return node
-
-        node = Tree()
-        self._label_branch(node)
-        return node
+            if ended:
+                # End of input while nodes are still open: attach the remaining
+                # subtrees up the stack so none is silently dropped (matching
+                # the lenient best-effort parse of the recursive-descent
+                # parser).
+                while len(stack) > 1:
+                    node = stack.pop()
+                    self._label_branch(node)
+                    parent = stack[-1]
+                    parent._children.append(node)
+                    node._parent = parent
+                if stack:
+                    self._label_branch(stack[0])
+                    root = stack[0]
+                return root
 
     def _label_branch(self, node: Tree) -> None:
         """Parse an optional node label and optional branch length."""
@@ -332,25 +390,74 @@ def write_newick(
         Names of node attributes to emit as BEAST-style ``[&key=value]``
         embodied data on each node.
     """
-    return _write_node(tree, include_dist, include_support, annotations) + ";"
+    out = []
+    _write_nodes(out, tree, include_dist, include_support, annotations)
+    out.append(";")
+    return "".join(out)
 
 
-def _write_node(
-    node: Tree, include_dist: bool, include_support: bool, annotations: list | None
-) -> str:
-    label = _write_label(node, include_support)
-    if node.is_leaf():
-        s = label
-    else:
-        child = ",".join(
-            _write_node(c, include_dist, include_support, annotations)
-            for c in node.children
-        )
-        s = "(" + child + ")" + label
+def _write_nodes(
+    out: list,
+    node: Tree,
+    include_dist: bool,
+    include_support: bool,
+    annotations: list | None,
+) -> None:
+    """Topologically append ``node``'s newick serialisation to ``out``.
+
+    A single shared list is used instead of repeatedly concatenating strings at
+    each level, which avoids the quadratic copying a nested ``("(" + child + ")"``
+    would incur on deep trees.  Traversal is done with an explicit stack (a list
+    of tasks) so a very deep caterpillar tree does not exhaust the recursion
+    limit.
+    """
+    # A task is a ("node", n) frame that emits its opening portion and schedules
+    # its children, a ("post", n) frame that finishes an internal node after its
+    # children were emitted (``)``, label, branch length, annotations), or a
+    # ("comma", None) frame that emits a sibling separator.
+    stack = [("node", node)]
+    while stack:
+        kind, data = stack.pop()
+        if kind == "node":
+            n = data
+            if n._children:
+                out.append("(")
+                children = n._children
+                # Build the pop-order tasks, then push in reverse so a LIFO stack
+                # emits them left-to-right.  Desired emission: child0, ",",
+                # child1, ..., childk, then the "post" (closing) task.
+                tasks = []
+                for i, c in enumerate(children):
+                    tasks.append(("node", c))
+                    if i != len(children) - 1:
+                        tasks.append(("comma", None))
+                tasks.append(("post", n))
+                stack.extend(reversed(tasks))
+            else:
+                out.append(_write_label(n, include_support))
+                _write_branch_and_annotations(out, n, include_dist, annotations)
+        elif kind == "comma":
+            out.append(",")
+        else:  # "post"
+            n = data
+            out.append(")")
+            out.append(_write_label(n, include_support))
+            _write_branch_and_annotations(out, n, include_dist, annotations)
+
+
+def _write_branch_and_annotations(
+    out: list,
+    node: Tree,
+    include_dist: bool,
+    annotations: list | None,
+) -> None:
+    """Emit ``[:length]`` and any ``[&key=value]`` block for ``node``."""
     if include_dist and node.branch_length is not None:
-        s += ":" + _format_number(node.branch_length)
-    s += _write_annotations(node, annotations)
-    return s
+        out.append(":")
+        out.append(_format_number(node.branch_length))
+    ann = _write_annotations(node, annotations)
+    if ann:
+        out.append(ann)
 
 
 def _write_annotations(node: Tree, annotations: list | None) -> str:

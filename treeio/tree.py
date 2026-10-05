@@ -510,14 +510,12 @@ class Tree:
         return list(node)
 
     def get_common_ancestor(self, node1: Tree, node2: Tree) -> Tree | None:
-        """Return the most recent common ancestor of two nodes."""
-        anc1 = set(self._ancestor_set(node1))
-        cur = node2
-        while cur is not None:
-            if cur in anc1:
-                return cur
-            cur = cur.parent
-        return None
+        """Return the most recent common ancestor of two nodes.
+
+        Uses a depth-based walk from the shared root, so it avoids the
+        per-call ancestor-set allocation and is safe for very deep trees.
+        """
+        return self._lca_node(node1, node2)
 
     def get_mrca(self, *nodes) -> Tree | None:
         """Return the most recent common ancestor of a set of nodes.
@@ -537,13 +535,61 @@ class Tree:
     # "mrca" as a method alias, following toytree/ete3 naming
     mrca = get_mrca
 
-    def _ancestor_set(self, node: Tree) -> list[Tree]:
-        out = []
-        cur = node
-        while cur is not None:
-            out.append(cur)
-            cur = cur.parent
-        return out
+    def _lca_node(self, node1: Tree, node2: Tree) -> Tree | None:
+        """Lowest common ancestor of two nodes, or ``None`` if they belong to
+        different trees (different root ancestors).
+
+        Depth is the number of ancestor edges from each node's own forest root
+        (the highest ancestor).  Both nodes are brought to equal depth and then
+        walked up together, giving the LCA in ``O(depth)`` with no per-call
+        set/list allocation.  This yields exactly the same LCA the old
+        set-based ``_ancestor_set`` approach produced.
+        """
+        d1 = 0
+        n = node1
+        while n._parent is not None:
+            d1 += 1
+            n = n._parent
+        root1 = n
+
+        d2 = 0
+        n = node2
+        while n._parent is not None:
+            d2 += 1
+            n = n._parent
+        root2 = n
+
+        if root1 is not root2:
+            return None
+
+        x, y = node1, node2
+        while d1 > d2:
+            x = x._parent
+            d1 -= 1
+        while d2 > d1:
+            y = y._parent
+            d2 -= 1
+        while x is not y:
+            x = x._parent
+            y = y._parent
+        return x
+
+    def _node_depth_map(self) -> dict[Tree, int]:
+        """Return ``{node: edge_depth}`` for every descendant of ``self``.
+
+        ``edge_depth`` is the number of ancestor edges from ``self`` (the root
+        of this (sub)tree).  Built with an explicit stack so it copes with very
+        deep trees without overflowing the recursion limit.
+        """
+        depth_map = {self: 0}
+        stack = [self]
+        while stack:
+            node = stack.pop()
+            nd = depth_map[node] + 1
+            for c in node._children:
+                depth_map[c] = nd
+                stack.append(c)
+        return depth_map
 
     # ---------------------------------------------------------------- ---
     # distances
@@ -557,38 +603,163 @@ class Tree:
         if not isinstance(node1, Tree) or not isinstance(node2, Tree):
             raise TypeError("get_distance expects Tree nodes")
 
-        anc1 = set(self._ancestor_set(node1))
-        cur = node2
-        lca = None
-        while cur is not None:
-            if cur in anc1:
-                lca = cur
-                break
-            cur = cur.parent
+        lca = self._lca_node(node1, node2)
         if lca is None:
             raise ValueError("nodes are not in the same tree")
 
         d = 0.0
         cur = node1
         while cur is not lca:
-            d += self._dist(cur)
-            cur = cur.parent
+            bl = cur.branch_length
+            d += 0.0 if bl is None else float(bl)
+            cur = cur._parent
         cur = node2
         while cur is not lca:
-            d += self._dist(cur)
-            cur = cur.parent
+            bl = cur.branch_length
+            d += 0.0 if bl is None else float(bl)
+            cur = cur._parent
         return d
 
     def get_cophenetic_distance(self) -> list[list[float]]:
-        """Return the pairwise patristic distance matrix for all tips."""
+        """Return the pairwise patristic distance matrix for all tips.
+
+        Uses ``dist(a, b) = D(a) + D(b) - 2*D(mrca(a, b))`` where ``D(x)`` is
+        the *branch-length* distance from the root down to ``x``.  ``D`` is
+        computed once in a single traversal, then the ``n x n`` matrix is filled
+        with numpy so the pairwise loop runs in C instead of Python (no per-pair
+        Python LCA walk).  Every tip pair is written exactly once -- at its most
+        recent common ancestor -- by filling the cross-clade block between each
+        pair of children of that node; deeper clades already hold their own
+        within-clade values.  This is ``O(n^2)`` element work for any shape.
+        Iterative (explicit stacks), so it copes with very deep trees without
+        hitting the recursion limit.
+        """
+        import math
+
         tips = self.get_tips()
         n = len(tips)
-        mat = [[0.0] * n for _ in range(n)]
-        for i in range(n):
-            for j in range(i + 1, n):
-                d = self.get_distance(tips[i], tips[j])
-                mat[i][j] = mat[j][i] = d
-        return mat
+        if n < 2:
+            return [[0.0] * n for _ in range(n)]
+
+        import numpy as np
+
+        # Pre-order sweep: assign tip indices (contiguous per clade) and the
+        # branch-length distance D from the root down to every node.
+        nodes = []
+        droot = {}
+        tip_index = {}
+        tip_counter = 0
+        finite = True
+        max_bl = 0.0
+        min_pos_bl = None
+        stack = [(self, 0.0)]
+        while stack:
+            node, parent_d = stack.pop()
+            bl = node.branch_length
+            if bl is not None:
+                fb = abs(float(bl))
+                max_bl = max(max_bl, fb)
+                if fb and (min_pos_bl is None or fb < min_pos_bl):
+                    min_pos_bl = fb
+            d = parent_d + (0.0 if bl is None else float(bl))
+            if finite and not math.isfinite(d):
+                finite = False
+            droot[node] = d
+            nodes.append(node)
+            if node.is_leaf():
+                tip_index[node] = tip_counter
+                tip_counter += 1
+            for c in reversed(node._children):
+                stack.append((c, d))
+
+        # ``inf`` / ``nan`` branch lengths break the ``D(a)+D(b)-2*D(lca)``
+        # identity (``inf - inf`` is ``nan``), so fall back to the exact
+        # per-pair path sum for such (pathological) trees.  ``get_distance``
+        # reproduces the original LCA + summation result bit for bit.
+        #
+        # The same identity also suffers catastrophic cancellation when branch
+        # lengths span a huge dynamic range (e.g. a 1e15 edge next to a 1e-3
+        # tip edge): the tip values are lost in ``D`` and the result collapses
+        # to 0 even though ``get_distance`` is correct.  Treat that as the same
+        # non-finite/ill-conditioned case so the exact per-pair path sum is
+        # used instead.
+        if max_bl and min_pos_bl and min_pos_bl < max_bl * 2.0**-40:
+            finite = False
+        if not finite:
+            mat = [[0.0] * n for _ in range(n)]
+            for i in range(n):
+                a = tips[i]
+                for j in range(i + 1, n):
+                    d = self.get_distance(a, tips[j])
+                    mat[i][j] = mat[j][i] = d
+            return mat
+
+        # Post-order pass records the contiguous tip-index range [lo, hi) that
+        # each node's clade occupies (used as the numpy block to fill).
+        lo = {}
+        hi = {}
+        stack = [(self, False)]
+        while stack:
+            node, visited = stack.pop()
+            if visited:
+                if node.is_leaf():
+                    lo[node] = tip_index[node]
+                    hi[node] = tip_index[node] + 1
+                else:
+                    los = [lo[c] for c in node._children]
+                    his = [hi[c] for c in node._children]
+                    lo[node] = min(los)
+                    hi[node] = max(his)
+            else:
+                stack.append((node, True))
+                for c in reversed(node._children):
+                    stack.append((c, False))
+
+        tip_d = np.zeros(n, dtype=np.float64)
+        for tip, idx in tip_index.items():
+            tip_d[idx] = droot[tip]
+
+        mat = np.zeros((n, n), dtype=np.float64)
+        for v in nodes:
+            if v.is_leaf():
+                continue
+            dv = droot[v]
+            ch = v._children
+            m = len(ch)
+            if m <= 12:
+                # Low degree: broadcast the cross-clade block between each pair
+                # of children (one write per pair's LCA).
+                for s in range(m):
+                    ls, hs = lo[ch[s]], hi[ch[s]]
+                    ds = tip_d[ls:hs]
+                    for t in range(s + 1, m):
+                        lt, ht = lo[ch[t]], hi[ch[t]]
+                        dt = tip_d[lt:ht]
+                        cross = ds[:, None] + dt[None, :] - 2.0 * dv
+                        mat[ls:hs, lt:ht] = cross
+                        mat[lt:ht, ls:hs] = cross.T
+            elif all(hi[c] - lo[c] == 1 for c in ch):
+                # High degree but every child is a single tip (a star polytomy):
+                # one contiguous full-block write; the diagonal is reset below.
+                l, h = lo[v], hi[v]
+                blk = tip_d[l:h]
+                mat[l:h, l:h] = blk[:, None] + blk[None, :] - 2.0 * dv
+            else:
+                # High degree with sub-clades: one masked full-block shot that
+                # keeps the within-clade cells already written by the children.
+                l, h = lo[v], hi[v]
+                blk = tip_d[l:h]
+                full = blk[:, None] + blk[None, :] - 2.0 * dv
+                cross = np.ones((h - l, h - l), dtype=bool)
+                for c in ch:
+                    cl, cht = lo[c], hi[c]
+                    i0, j0 = cl - l, cht - l
+                    cross[i0:j0, i0:j0] = False
+                block = mat[l:h, l:h]
+                block[cross] = full[cross]
+
+        np.fill_diagonal(mat, 0.0)
+        return mat.tolist()
 
     def get_depth_to_root(self, node: Tree) -> float:
         """Distance from ``node`` up to the root."""

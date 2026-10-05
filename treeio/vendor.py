@@ -38,24 +38,24 @@ def read_mrbayeses(text: str) -> list[Tree]:
     """Read every tree from a MrBayes NEXUS file."""
     trees = read_nexuses(text)
     meta = _mrbayes_block(text)
-    for t in trees:
-        if meta:
+    if meta:
+        for t in trees:
             t.set_data("mrbayes", meta)
     return trees
 
 
-def _mrbayes_block(text: str) -> dict:
+def _mrbayes_block(text: str) -> dict[str, str]:
     """Capture key MrBayes settings from the ``begin mrbayes`` block."""
     m = re.search(r"BEGIN\s+MRBAYES;(.*?)END;", text, re.DOTALL | re.IGNORECASE)
     if not m:
         return {}
     body = m.group(1)
-    out = {}
+    settings: dict[str, str] = {}
     for key in ("lset", "prset", "mcmc", "unlink", "outgroup"):
         km = re.search(r"\b" + key + r"\s+([^;]+);", body, re.IGNORECASE)
         if km:
-            out[key] = km.group(1).strip()
-    return out
+            settings[key] = km.group(1).strip()
+    return settings
 
 
 def read_iqtree(treefile_text: str) -> Tree:

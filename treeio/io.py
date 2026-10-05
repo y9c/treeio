@@ -44,6 +44,12 @@ from .vendor import read_iqtree, read_mrbayeses, read_raxml
 
 _PHYLIP_HEADER_RE = _re.compile(r"^\s*\d+\s+\d+\s*$")
 
+# Hoisted regexes for :func:`detect_format` (compiled once, reused on every call
+# instead of being recompiled inline each time the format is sniffed).
+_MRBAYES_RE = _re.compile(r"BEGIN\s+MRBAYES\s*;", _re.IGNORECASE)
+_XML_DECL_RE = _re.compile(r"\s*<\?xml[^>]*\?>")
+_ROOT_TAG_RE = _re.compile(r"<([A-Za-z_][\w.-]*:)?([A-Za-z_][\w.-]*)")
+
 _FORMATS = {
     "newick": ("nwk", "newick", "tree", "nhx"),
     "nexus": ("nex", "nexus", "nxs"),
@@ -75,21 +81,41 @@ def register_format(name: str, read=None, write=None, extensions=()):
         "write": write,
         "extensions": [e.lstrip(".") for e in extensions],
     }
+    _reset_extension_map()
     return name
 
 
 def unregister_format(name: str):
     """Remove a previously registered custom format."""
-    return _FORMAT_REGISTRY.pop(name, None)
+    result = _FORMAT_REGISTRY.pop(name, None)
+    _reset_extension_map()
+    return result
+
+
+# memoised extension -> format map; rebuilt only when the registry changes.
+_EXTENSION_MAP_CACHE: dict | None = None
+
+
+def _reset_extension_map() -> None:
+    global _EXTENSION_MAP_CACHE
+    _EXTENSION_MAP_CACHE = None
 
 
 def _extension_map() -> dict:
-    """Merged extension -> format map (built-in + registered)."""
-    mapping = {ext: fmt for fmt, exts in _FORMATS.items() for ext in exts}
-    for name, info in _FORMAT_REGISTRY.items():
-        for ext in info.get("extensions", []):
-            mapping[ext] = name
-    return mapping
+    """Merged extension -> format map (built-in + registered).
+
+    The result is memoised and only recomputed when :func:`register_format` or
+    :func:`unregister_format` is called, so repeated ``_format_from_path``
+    lookups do not rebuild the mapping on every call.
+    """
+    global _EXTENSION_MAP_CACHE
+    if _EXTENSION_MAP_CACHE is None:
+        mapping = {ext: fmt for fmt, exts in _FORMATS.items() for ext in exts}
+        for name, info in _FORMAT_REGISTRY.items():
+            for ext in info.get("extensions", []):
+                mapping[ext] = name
+        _EXTENSION_MAP_CACHE = mapping
+    return _EXTENSION_MAP_CACHE
 
 
 def detect_format(source: str) -> str:
@@ -97,17 +123,17 @@ def detect_format(source: str) -> str:
     s = source.lstrip()
     if s.startswith("#NEXUS"):
         # only call it MrBayes when there is an actual ``begin mrbayes`` block
-        if _re.search(r"BEGIN\s+MRBAYES\s*;", s, _re.IGNORECASE):
+        if _MRBAYES_RE.search(s):
             return "mrbayes"
         return "nexus"
     # Determine the root element's *local* name across an optional ``<?xml?>``
     # declaration, leading markup (comments / DOCTYPE) and a namespace prefix
     # (e.g. ``<ns0:nexml>``).  The old ``startswith("<nexml")`` check missed a
     # declaration or a prefixed root, letting NeXML fall through to ``phyloxml``.
-    decl = _re.match(r"\s*<\?xml[^>]*\?>", s)
+    decl = _XML_DECL_RE.match(s)
     if decl:
         s = s[decl.end() :].lstrip()
-    tag_m = _re.match(r"<([A-Za-z_][\w.-]*:)?([A-Za-z_][\w.-]*)", s)
+    tag_m = _ROOT_TAG_RE.match(s)
     root_local = tag_m.group(2) if tag_m else None
     if root_local == "nexml":
         return "nexml"
