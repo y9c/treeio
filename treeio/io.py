@@ -28,6 +28,7 @@ Examples
 
 from __future__ import annotations
 
+import json as _json
 import re as _re
 from pathlib import Path
 
@@ -114,9 +115,25 @@ def detect_format(source: str) -> str:
         return "phyloxml"
     if s.startswith(("<?xml", "<")):
         return "phyloxml"
-    if s.startswith("{"):
-        # JSON may be a plain tree or a Jplace placement document
-        return "jplace" if '"tree"' in s else "json"
+    if s[:1] in ("{", "["):
+        # Structured JSON.  Inspect the parsed top-level structure rather than
+        # searching a raw substring: a one-node tree named "tree" is a JSON
+        # dict with a "name" key, and a multi-tree payload is a JSON array, so
+        # the old '"tree"' in s / leading "["==newick heuristics were wrong.
+        try:
+            data = _json.loads(s)
+        except (ValueError, TypeError):
+            data = None
+        if isinstance(data, dict) and "tree" in data:
+            # dict with a "tree" key is a Jplace placement document
+            return "jplace"
+        if isinstance(data, (dict, list)):
+            # dict -> single tree, list -> multiple trees
+            return "json"
+        if s.startswith("{"):
+            # malformed-but-JSON-looking payload, best effort
+            return "json"
+        # Unparseable "[" text (e.g. the newick [&R] root marker) falls through
     if _PHYLIP_HEADER_RE.match(s.split("\n", 1)[0]):
         return "phylip"
     if s.startswith(("(", "[")):

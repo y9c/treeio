@@ -64,6 +64,21 @@ def _fmt(x):
     return str(int(f)) if f == int(f) else repr(f)
 
 
+def _meta_content(value):
+    """Serialize an annotation value for a ``<meta content=...>`` attribute.
+
+    Bools round-trip as ``true``/``false`` (the reader casts them back to bool),
+    numeric values use the compact float formatter, everything else is ``str()``.
+    """
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return _fmt(value)
+    return str(value)
+
+
 def _label(tag: str) -> str:
     return tag if tag.startswith("{") else "{" + _NS + "}" + tag
 
@@ -178,6 +193,26 @@ def write_nexml(tree: Tree, name: str = "Tree") -> str:
             meta = ET.SubElement(nd, _label("meta"))
             meta.set("property", "support")
             meta.set("content", _fmt(node.support))
+        # Per-node annotations (set via ``set_data``) become ``<meta property=...>``
+        # so the reader (which captures any such meta back into the node) preserves
+        # them through a write(nexml)->read(nexml) round-trip.  ``name`` is already
+        # written above and ``_``-prefixed layout coords / ``None`` values are skipped.
+        if node._annotations:
+            for key, value in node._annotations.items():
+                if key == "name" or key.startswith("_"):
+                    continue
+                content = _meta_content(value)
+                if content is None:
+                    continue
+                meta = ET.SubElement(nd, _label("meta"))
+                meta.set("property", key)
+                meta.set("content", content)
+        # The root has no parent edge, so its branch_length would be dropped by the
+        # edge-emission loop below; record it as a ``<branch_length>`` child that the
+        # reader picks up directly from the node element.
+        if node.parent is None and node.branch_length is not None:
+            bl = ET.SubElement(nd, _label("branch_length"))
+            bl.text = repr(node.branch_length)
     for node in tree.traverse("preorder"):
         if node.parent is None:
             continue

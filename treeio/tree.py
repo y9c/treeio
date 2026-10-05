@@ -282,12 +282,20 @@ class Tree:
         return not self.is_leaf()
 
     def is_binary(self) -> bool:
-        """Check the (sub)tree is fully bifurcating (no multifurcation)."""
-        if self.is_leaf():
-            return True
-        if len(self.children) != 2:
-            return False
-        return all(c.is_binary() for c in self.children)
+        """Check the (sub)tree is fully bifurcating (no multifurcation).
+
+        Implemented iteratively (explicit stack) so it copes with very deep
+        trees without hitting the recursion limit.
+        """
+        stack = [self]
+        while stack:
+            node = stack.pop()
+            if node.is_leaf():
+                continue
+            if len(node._children) != 2:
+                return False
+            stack.extend(node._children)
+        return True
 
     # alias used by toytree / ete3
     is_bifurcating = is_binary
@@ -754,13 +762,21 @@ class Tree:
         return self
 
     def _ladderize(self, reverse: bool) -> None:
-        for c in self.children:
-            c._ladderize(reverse)
-        self.children = sorted(
-            self.children,
-            key=lambda c: (c.nleaves, c.name),
-            reverse=reverse,
-        )
+        # bottom-up (post-order) re-sort using an explicit stack so a deeply
+        # laddered tree does not overflow the recursion limit.
+        stack = [(self, False)]
+        while stack:
+            node, visited = stack.pop()
+            if visited:
+                node.children = sorted(
+                    node.children,
+                    key=lambda c: (c.nleaves, c.name),
+                    reverse=reverse,
+                )
+            else:
+                stack.append((node, True))
+                for ch in reversed(node._children):
+                    stack.append((ch, False))
 
     def rotate(self, node: Tree = None) -> Tree:
         """Rotate (reverse the order of) a node's children in place.
@@ -787,38 +803,79 @@ class Tree:
         if out is self:
             return self
 
-        # walk the path out -> root, collecting every sibling clade encountered
-        pieces = []
-        # The internal path nodes (between ``out`` and the root) are dropped and
-        # replaced by a single ``rest`` subtree; carry the edge lengths of those
-        # path nodes forward so the total tree length is preserved.
-        path_edge = 0.0
+        # Re-root on the edge incident to ``out`` so it becomes a basal clade.
+        # This is purely a root-placement change on the *fixed* unrooted topology:
+        # every existing internal node and edge length is kept (the path between
+        # ``out`` and the root is simply re-oriented), so tip-to-tip patristic
+        # distances and the total tree length are unchanged.
+        #
+        # Build the chain of ancestors from ``out`` up to (but excluding) the
+        # root: chain = [out, ..., child_of_root].  Every link is a direct
+        # parent->child edge whose length is carried in ``branch_length``.
+        chain = []
         node = out
-        while node.parent is not None:
-            p = node.parent
-            p._children = [c for c in p._children if c is not node]
-            pieces.extend(c for c in p.children if c is not node)
-            if node is not out and node is not self:
-                path_edge += self._dist(node)
-            node = p
-            if node is self:
-                break
+        while node is not self:
+            chain.append(node)
+            node = node.parent
 
-        # reconnect the remaining clades under a single "rest" subtree
-        if len(pieces) == 1:
-            rest = pieces[0]
-            if path_edge:
-                rest.branch_length = self._dist(rest) + path_edge
-        elif len(pieces) > 1:
-            rest = Tree("internal", branch_length=path_edge)
-            rest.children = pieces
-        else:
-            rest = None
+        # ``out`` is already a direct child of the root: nothing to restructure,
+        # just make it basal (first child).
+        if len(chain) == 1:
+            self._children.remove(out)
+            self._children.insert(0, out)
+            return self
 
-        if rest is None:
-            self.children = [out]
-        else:
-            self.children = [out, rest]
+        out_node = chain[0]
+        v1 = chain[1]  # out.parent, becomes the root of the sister clade
+        vk = chain[-1]  # the child of the root on the path to ``out``
+        old_b = [self._dist(x) for x in chain]
+
+        # The root's other subtrees (siblings of the path) are pulled down to
+        # hang off ``vk``; each absorbs the former ``vk``->root edge length so
+        # that the dissolved root edge is not lost.
+        others = [c for c in self._children if c is not vk]
+        old_others = {id(c): self._dist(c) for c in others}
+
+        # detach the outgroup and the siblings so the graph can be re-linked
+        out_node._detach_from_parent()
+        for c in others:
+            c._detach_from_parent()
+
+        # ``v1`` becomes the direct child of the root; ``out`` keeps its edge so
+        # the root is placed at ``v1``'s end of the (out, v1) edge.
+        v1._detach_from_parent()
+        v1._children = [c for c in v1._children if c is not out_node]
+        v1.branch_length = 0.0
+
+        # Re-orient the inner path nodes: each chain[i+1] becomes a child of
+        # chain[i] and inherits chain[i]'s former edge length.
+        prev = v1
+        for i in range(1, len(chain) - 1):
+            vi = chain[i]
+            vi1 = chain[i + 1]
+            vi1._detach_from_parent()
+            vi1._children = [c for c in vi1._children if c is not vi]
+            vi1.branch_length = old_b[i]
+            prev._children.append(vi1)
+            vi1._parent = prev
+            prev = vi1
+
+        # ``vk`` (now the deepest node of the re-oriented clade) absorbs the
+        # root's former siblings.
+        for c in others:
+            add = old_b[-1]
+            if c.branch_length is None:
+                if add:
+                    c.branch_length = float(add)
+            else:
+                c.branch_length = old_others[id(c)] + add
+            prev._children.append(c)
+            c._parent = prev
+
+        # final topology: root -> [out, v1] with out basal.
+        self._children = [out_node, v1]
+        out_node._parent = self
+        v1._parent = self
         return self
 
     def _resolve_clade(self, outgroup) -> Tree | None:
@@ -868,17 +925,31 @@ class Tree:
         return self
 
     def _prune_to(self, keptset: set) -> None:
-        """Keep only descendants that lead to a tip in ``keptset``."""
-        if self.is_leaf():
-            return
-        dropped = [c for c in self._children if not c._has_kept(keptset)]
-        self._children = [c for c in self._children if c._has_kept(keptset)]
-        for c in dropped:
-            c._parent = None
-        for c in self._children:
-            c._parent = self
-            c._prune_to(keptset)
-        self._splice_single_child()
+        """Keep only descendants that lead to a tip in ``keptset``.
+
+        Generates a post-order plan on an explicit stack so a very deep
+        caterpillar tree does not overflow the recursion limit.
+        """
+        stack = [(self, False)]
+        while stack:
+            node, visited = stack.pop()
+            if visited:
+                # children were already pruned + spliced (post-order), so only
+                # the node itself needs collapsing here.
+                node._splice_single_child()
+            else:
+                if node.is_leaf():
+                    continue
+                kept = [c for c in node._children if c._has_kept(keptset)]
+                dropped = [c for c in node._children if not c._has_kept(keptset)]
+                node._children = kept
+                for c in dropped:
+                    c._parent = None
+                # schedule the node's own splice, then its (kept) children
+                stack.append((node, True))
+                for c in reversed(node._children):
+                    c._parent = node
+                    stack.append((c, False))
 
     def _has_kept(self, keptset: set) -> bool:
         """True if any tip of this (sub)tree is in ``keptset``."""
@@ -888,6 +959,12 @@ class Tree:
         # Collapse any node (including the root) that has exactly one child by
         # promoting the child upward (its incoming branch length is added to the
         # child's, so total tree length is preserved).
+        #
+        # Only the node itself is collapsed here; ``_prune_to`` runs this in
+        # post-order so each descendant is already collapsed before its parent,
+        # and a collapse is a 1-for-1 child swap that never changes the parent's
+        # child count.  This keeps the whole operation iterative (deep-tree safe)
+        # while preserving identical behavior for normal trees.
         if len(self._children) == 1:
             child = self._children[0]
             if child.branch_length is not None or self.branch_length is not None:
@@ -908,8 +985,6 @@ class Tree:
                 self._children = list(child._children)
                 for gc in self._children:
                     gc._parent = self
-        for c in self._children:
-            c._splice_single_child()
 
     def prune(self, names: Iterable[str]) -> Tree:
         """Keep only the tips named in ``names``; everything else is dropped.

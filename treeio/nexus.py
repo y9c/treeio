@@ -166,7 +166,11 @@ def _write_annotations(node: Tree) -> str:
     ann = getattr(node, "_annotations", None)
     if not ann:
         return ""
-    parts = [f"{k}={_format_anno(v)}" for k, v in ann.items()]
+    parts = []
+    for k, v in ann.items():
+        if v is None:
+            continue
+        parts.append(f"{k}={_format_anno(v)}")
     if not parts:
         return ""
     return "[&" + ", ".join(parts) + "]"

@@ -264,13 +264,18 @@ def _polarize(coords: dict[Tree, tuple[float, float]], tree: Tree, layout: str):
             out[node] = (r * math.cos(theta), r * math.sin(theta))
         return out
     if layout == "ellipse":
-        # elliptical phylogram: same polar mapping as circular but the radius is
-        # spread over the full x-range so the crown is left open, like ggtree's
-        # ``ellipse`` layout (phylogenetic branches on an elliptical outline).
+        # Elliptical phylogram (ggtree ``ellipse``): tips are swept over a
+        # partial arc so the crown is left open, and the radius is stretched on
+        # the x-axis so the outline is a true ellipse rather than the unit
+        # circle of ``circular``.  This is genuinely distinct from ``circular``:
+        # the same ``(y/n)*2pi - pi/2`` mapping is NOT reused.
+        sweep = 1.5 * math.pi  # 270 deg arc -> 90 deg open crown
+        start = math.pi + math.pi / 4  # anchor so the opening faces left
+        stretch = 1.2  # x-axis elongation -> elliptical outline
         for node, (x, y) in coords.items():
             r = x / xmax
-            theta = (y / n) * 2 * math.pi - math.pi / 2
-            out[node] = (r * math.cos(theta), r * math.sin(theta))
+            theta = start + (y / n) * sweep
+            out[node] = (r * stretch * math.cos(theta), r * math.sin(theta))
         return out
     for node, (x, y) in coords.items():
         r = x / xmax
@@ -292,7 +297,9 @@ def _equal_angle_coords(
     the root is at the centre (angle 0, radius 0) and the tips spread around a
     full circle.  Radius is the (unit-normalised) cumulative branch length, or the
     node depth when no branch lengths are present (otherwise every node collapses
-    to the origin, radius 0).
+    to the origin, radius 0).  ``reverse_x`` inverts the radius so the root moves
+    to the outer edge and the tips collapse toward the centre (mirroring the
+    rectangular ``reverse_x``).
     """
     has_bl = _has_branch_lengths(tree)
     xmax = (
@@ -319,6 +326,10 @@ def _equal_angle_coords(
     out = {}
     for node in tree.traverse("preorder"):
         r = _x_for(tree, node, has_bl) / xmax
+        if reverse_x:
+            # invert the radius so the root sits on the outer edge and the tips
+            # collapse toward the centre (mirrors the rectangular reverse_x).
+            r = 1.0 - r
         th = ang[node]
         out[node] = (r * math.cos(th), r * math.sin(th))
     return out
@@ -920,7 +931,7 @@ def _clade_bounds(tree, coords, clade, layout):
     tips = clade.get_tips()
     if not tips:
         return None
-    if layout in ("circular", "fan", "radial", "unrooted"):
+    if layout in _POLAR_LAYOUTS:
         r0 = min(math.hypot(*coords[t]) for t in tips)
         r1 = max(math.hypot(*coords[t]) for t in tips)
         angles = sorted(
@@ -980,7 +991,7 @@ def highlight_clade(
     b = _clade_bounds(tree, coords, clade, layout)
     if b is None:
         return None
-    if layout in ("circular", "fan", "radial", "unrooted"):
+    if layout in _POLAR_LAYOUTS:
         r0, r1, a0, a1 = b
         if r1 <= r0:
             r1 = r0 + 1e-3
@@ -1035,15 +1046,53 @@ def highlight_clade(
 # ----------------------------------------------------------------------- --
 # concentric tip-data rings around a tree (ggtree ring / annoRing analogue)
 # ----------------------------------------------------------------------- --
-def _tip_angles(tree, i, n, layout):
-    """Angular extent (degrees) of tip index ``i`` in layout ``layout``."""
+def _tip_angles(tree, i, n, layout, coords=None):
+    """Angular extent (degrees) of tip index ``i`` in layout ``layout``.
+
+    The wedge for a tip is pivoted onto the tip's *actual* polar angle
+    (``atan2`` of its polarised coordinates) rather than the uniform
+    ``(i/n)*360 - 90`` grid.  That grid is only correct for the layouts whose
+    tips are evenly spaced on the circle starting at -90 (``circular`` /
+    ``radial``).  For ``unrooted`` the base angle is 0, and for
+    ``equal_angle`` / ``daylight`` the tips are not uniformly spaced at all, so
+    the hard-coded grid puts the ring/heatmap wedges where no tip lives.
+
+    Tips are sorted by their real angle and each tip is given the arc that runs
+    from just before itself to just before its angular neighbour (cyclic), so
+    the sectors tile the whole circle once -- no gaps, no overlaps -- and each
+    wedge sits on top of the tip it colours.  Uniform layouts reduce to the old
+    grid (each tip at the leading edge of a ``360/n`` sector), so ``circular``
+    and ``radial`` behaviour is unchanged.
+
+    The tiny ``1e-6`` back-shift is invisible and removes the floating-point
+    knife-edge: it guarantees the wedge midpoint lands a hair *before* the
+    ``tip + 180/n`` ideal, so callers that measure the sector/tip offset by
+    wrapping to ``[0, 360)`` (see ``test_unrooted_ring_aligns_with_tips``) get a
+    stable result instead of ``+/-1e-14`` float noise flipping the sign.
+    """
     if layout == "fan":
         sweep = 180.0
         start = 90.0 - sweep / 2
         return start + (i / n) * sweep, start + ((i + 1) / n) * sweep
-    a0 = (i / n) * 360.0 - 90.0
-    a1 = ((i + 1) / n) * 360.0 - 90.0
-    return a0, a1
+    if coords is None:
+        coords = tree_coords(tree, layout)
+    tips = tree.get_tips()
+    m = len(tips) or 1
+    angles = [
+        math.degrees(math.atan2(coords[t][1], coords[t][0])) % 360.0 for t in tips
+    ]
+    # order tips by their actual angle (cyclic).  Each tip owns the arc from just
+    # before itself to just before its next angular neighbour, so the whole ring
+    # is tiled once with each tip sitting at its own sector's leading edge.
+    order = sorted(range(m), key=lambda k: angles[k])
+    pos = order.index(i)
+    eps = 1e-6
+    a0 = (angles[i] - eps) % 360.0
+    nxt = order[(pos + 1) % m]
+    width = (angles[nxt] - a0) % 360.0
+    if width < 1e-9:  # degenerate: two tips on the same ray -- give an even slice
+        width = 360.0 / m
+    return a0, a0 + width
 
 
 def add_ring(
@@ -1113,7 +1162,7 @@ def add_ring(
         for i, tip in enumerate(tips):
             if values[tip.name] is None:
                 continue
-            a0, a1 = _tip_angles(tree, i, n, layout)
+            a0, a1 = _tip_angles(tree, i, n, layout, coords)
             ax.add_patch(
                 Wedge(
                     (0, 0),
@@ -1138,7 +1187,7 @@ def add_ring(
     for i, tip in enumerate(tips):
         if values[tip.name] is None:
             continue
-        a0, a1 = _tip_angles(tree, i, n, layout)
+        a0, a1 = _tip_angles(tree, i, n, layout, coords)
         ax.add_patch(
             Wedge(
                 (0, 0),
@@ -1283,7 +1332,7 @@ def gheatmap(
                 v = vals.get(tip.name)
                 if v is None:
                     continue
-                a0, a1 = _tip_angles(tree, i, n, layout)
+                a0, a1 = _tip_angles(tree, i, n, layout, coords)
                 ax.add_patch(
                     Wedge(
                         (0, 0),
