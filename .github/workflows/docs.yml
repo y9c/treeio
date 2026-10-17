@@ -35,9 +35,8 @@ jobs:
 
       - name: Build pdoc API under /api/
         run: |
-          pdoc --html -o ./_api_treeio treeio
           mkdir -p _site/api
-          cp -r _api_treeio/treeio/* _site/api/
+          pdoc -o _site/api treeio
 
       - name: Deploy to gh-pages
         uses: peaceiris/actions-gh-pages@v4
