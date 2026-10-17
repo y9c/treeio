@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>treeio — live gallery</title>
+  <style>
+    :root {
+      --bg: #12151c;
+      --panel: #1b2029;
+      --panel-2: #222834;
+      --border: #2c3341;
+      --accent: #4a9eff;
+      --text: #e6eaf2;
+      --muted: #9aa4b2;
+      --ok: #35c46f;
+      --err: #ff6b6b;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background: var(--bg); color: var(--text);
+      display: grid; grid-template-columns: 280px 1fr; grid-template-rows: 56px 1fr;
+      grid-template-areas: 'header header' 'sidebar main';
+      height: 100vh;
+    }
+    header {
+      grid-area: header; display: flex; align-items: center; gap: 12px;
+      padding: 0 18px; border-bottom: 1px solid var(--border); background: var(--panel);
+    }
+    header .logo { font-weight: 700; font-size: 17px; }
+    header .tag { color: var(--muted); font-size: 13px; }
+    header .badge {
+      margin-left: auto; font-size: 12px; color: var(--muted);
+      border: 1px solid var(--border); padding: 4px 10px; border-radius: 20px;
+    }
+    header a.api-link {
+      color: var(--accent); text-decoration: none; font-size: 13px;
+      border: 1px solid var(--accent); padding: 4px 12px; border-radius: 20px;
+    }
+    header a.api-link:hover { background: var(--accent); color: #06121f; }
+    aside {
+      grid-area: sidebar; overflow-y: auto; border-right: 1px solid var(--border);
+      background: var(--panel); padding: 12px 10px;
+    }
+    aside h3 {
+      font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;
+      color: var(--muted); margin: 8px 6px 6px;
+    }
+    .ex {
+      display: block; width: 100%; text-align: left; background: none; border: none;
+      color: var(--text); padding: 9px 10px; border-radius: 8px; cursor: pointer;
+      font-size: 13.5px; line-height: 1.35; border: 1px solid transparent;
+    }
+    .ex:hover { background: var(--panel-2); }
+    .ex.active { background: var(--panel-2); border-color: var(--accent); }
+    .ex .d { display: block; color: var(--muted); font-size: 11.5px; margin-top: 2px; }
+    main {
+      grid-area: main; overflow: hidden; display: grid; grid-template-columns: 1fr 1fr;
+      grid-template-rows: auto 1fr; gap: 0;
+    }
+    .doc { grid-column: 1 / 3; padding: 14px 18px 6px; }
+    .doc h1 { margin: 0 0 4px; font-size: 20px; }
+    .doc p { margin: 0; color: var(--muted); font-size: 13.5px; }
+    .editor-pane { border-right: 1px solid var(--border); display: flex; flex-direction: column; min-height: 0; }
+    .canvas-pane { display: flex; flex-direction: column; min-height: 0; }
+    .pane-head {
+      padding: 8px 14px; font-size: 12px; color: var(--muted);
+      border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px;
+    }
+    .editor-pane .pane-head { justify-content: space-between; }
+    textarea {
+      flex: 1; resize: none; border: none; background: #0e1117; color: #d7e0ee;
+      padding: 12px 14px; font-family: 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+      font-size: 13px; line-height: 1.55; outline: none; white-space: pre; overflow: auto;
+    }
+    .run-bar {
+      display: flex; gap: 8px; align-items: center; padding: 9px 12px;
+      border-top: 1px solid var(--border);
+    }
+    button.run {
+      background: var(--accent); color: #06121f; border: none; border-radius: 7px;
+      padding: 8px 18px; font-weight: 600; font-size: 13.5px; cursor: pointer;
+    }
+    button.run:disabled { background: #344256; color: #7f8b9d; cursor: not-allowed; }
+    .hint { font-size: 11.5px; color: var(--muted); }
+    .canvas {
+      flex: 1; background: #0e1117; display: flex; align-items: center; justify-content: center;
+      overflow: auto; padding: 18px; position: relative;
+    }
+    .canvas img, .canvas canvas {
+      max-width: 100%; max-height: 100%; box-shadow: 0 0 0 1px var(--border); border-radius: 6px;
+    }
+    .canvas-placeholder {
+      color: var(--muted); font-size: 14px; text-align: center; line-height: 1.6;
+    }
+
+    /* live-status pill (top of canvas) */
+    .live {
+      font-size: 11.5px; padding: 3px 9px; border-radius: 16px;
+      border: 1px solid var(--border); color: var(--muted);
+    }
+    .live.loading { border-color: #b08c2e; color: #e8c46a; }
+    .live.ready { border-color: var(--ok); color: var(--ok); }
+    .live.error { border-color: var(--err); color: var(--err); }
+
+    /* toast (bottom-right) */
+    #toast {
+      position: fixed; right: 18px; bottom: 18px; z-index: 999;
+      display: flex; flex-direction: column; gap: 8px; align-items: flex-end;
+    }
+    .toast {
+      background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+      border-radius: 10px; padding: 10px 14px; font-size: 12.5px;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.35);
+      display: flex; align-items: center; gap: 10px; max-width: 340px;
+      transition: opacity 0.3s, transform 0.3s;
+    }
+    .toast .spinner {
+      width: 15px; height: 15px; border: 2px solid var(--border);
+      border-top-color: var(--accent); border-radius: 50%;
+      animation: spin 0.8s linear infinite; flex: none;
+    }
+    .toast.done .spinner { animation: none; border-color: var(--ok); background: var(--ok); }
+    .toast.error .spinner { animation: none; border-color: var(--err); background: var(--err); }
+    .toast .msg { line-height: 1.4; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .toast.hide { opacity: 0; transform: translateY(6px); }
+  </style>
+</head>
+<body>
+  <header>
+    <span class="logo">treeio</span>
+    <span class="tag">phylogenetic trees, live in your browser</span>
+    <a class="api-link" href="api/">API reference</a>
+    <span class="badge">Pyodide · no backend</span>
+  </header>
+
+  <aside id="list">
+    <h3>Gallery</h3>
+    <!-- items injected by app.js -->
+  </aside>
+
+  <main>
+    <div class="doc">
+      <h1 id="title"></h1>
+      <p id="desc"></p>
+    </div>
+    <section class="editor-pane">
+      <div class="pane-head">
+        <span>Python code</span>
+        <button id="runBtn" class="run" disabled>Run</button>
+      </div>
+      <textarea id="code" spellcheck="false"></textarea>
+    </section>
+    <section class="canvas-pane">
+      <div class="pane-head">
+        <span>Figure</span>
+        <span id="live" class="live loading">engine loading…</span>
+      </div>
+      <div class="canvas" id="canvas">
+        <div class="canvas-placeholder" id="placeholder">
+          Loading preview…
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast"></div>
+
+  <!-- runner.js is an ES module (needs Pyodide's ESM build); app.js loads it. -->
+  <script src="./examples.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>

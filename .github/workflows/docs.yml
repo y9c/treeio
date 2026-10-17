@@ -1,0 +1,47 @@
+name: Publish docs 📘 (live gallery + API) on github pages
+
+# One documentation site, one workflow.  The live, interactive gallery is the
+# home page (/) and the pdoc API reference lives under /api/ -- they share an
+# entry point and are deployed together so neither ever overwrites the other.
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install docs deps
+        run: python -m pip install --upgrade pip pdoc
+
+      # Assemble a single publish root: gallery at /, pdoc API at /api/.
+      # (cp -r docs/live/. copies the *contents* so the gallery lands at /.)
+      - name: Stage gallery (heart of the site)
+        run: |
+          mkdir -p _site
+          cp -r docs/live/. _site/
+
+      - name: Build pdoc API under /api/
+        run: |
+          pdoc --html -o ./_api_treeio treeio
+          mkdir -p _site/api
+          cp -r _api_treeio/treeio/* _site/api/
+
+      - name: Deploy to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./_site
+          keep_files: false
